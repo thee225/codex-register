@@ -97,9 +97,14 @@ function initEventListeners() {
     elements.batchCheckSubBtn.addEventListener('click', handleBatchCheckSubscription);
 
     // 上传下拉菜单
-    document.getElementById('batch-upload-cpa-item').addEventListener('click', (e) => { e.preventDefault(); handleBatchUploadCpa(); });
-    document.getElementById('batch-upload-sub2api-item').addEventListener('click', (e) => { e.preventDefault(); handleBatchUploadSub2Api(); });
-    document.getElementById('batch-upload-tm-item').addEventListener('click', (e) => { e.preventDefault(); handleBatchUploadTm(); });
+    const uploadMenu = document.getElementById('upload-menu');
+    elements.batchUploadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        uploadMenu.classList.toggle('active');
+    });
+    document.getElementById('batch-upload-cpa-item').addEventListener('click', (e) => { e.preventDefault(); uploadMenu.classList.remove('active'); handleBatchUploadCpa(); });
+    document.getElementById('batch-upload-sub2api-item').addEventListener('click', (e) => { e.preventDefault(); uploadMenu.classList.remove('active'); handleBatchUploadSub2Api(); });
+    document.getElementById('batch-upload-tm-item').addEventListener('click', (e) => { e.preventDefault(); uploadMenu.classList.remove('active'); handleBatchUploadTm(); });
 
     // 批量删除
     elements.batchDeleteBtn.addEventListener('click', handleBatchDelete);
@@ -166,6 +171,7 @@ function initEventListeners() {
     // 点击其他地方关闭下拉菜单
     document.addEventListener('click', () => {
         elements.exportMenu.classList.remove('active');
+        uploadMenu.classList.remove('active');
     });
 }
 
