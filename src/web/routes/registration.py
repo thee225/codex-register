@@ -620,6 +620,15 @@ def _make_batch_helpers(batch_id: str):
     return add_batch_log, update_batch_status
 
 
+def _send_bark(title: str, body: str):
+    """发送 Bark 通知（不抛异常）"""
+    try:
+        from ...core.notify import send_bark_notification
+        send_bark_notification(title, body)
+    except Exception as e:
+        logger.warning(f"Bark 通知失败: {e}")
+
+
 async def run_batch_parallel(
     batch_id: str,
     task_uuids: List[str],
@@ -674,6 +683,7 @@ async def run_batch_parallel(
         if not task_manager.is_batch_cancelled(batch_id):
             add_batch_log(f"[完成] 批量任务完成！成功: {batch_tasks[batch_id]['success']}, 失败: {batch_tasks[batch_id]['failed']}")
             update_batch_status(finished=True, status="completed")
+            _send_bark("批量注册完成", f"成功 {batch_tasks[batch_id]['success']} / 失败 {batch_tasks[batch_id]['failed']} / 共 {len(task_uuids)}")
         else:
             update_batch_status(finished=True, status="cancelled")
     except Exception as e:
@@ -765,6 +775,7 @@ async def run_batch_pipeline(
         if not task_manager.is_batch_cancelled(batch_id):
             add_batch_log(f"[完成] 批量任务完成！成功: {batch_tasks[batch_id]['success']}, 失败: {batch_tasks[batch_id]['failed']}")
             update_batch_status(finished=True, status="completed")
+            _send_bark("批量注册完成", f"成功 {batch_tasks[batch_id]['success']} / 失败 {batch_tasks[batch_id]['failed']} / 共 {len(task_uuids)}")
     except Exception as e:
         logger.error(f"批量任务 {batch_id} 异常: {e}")
         add_batch_log(f"[错误] 批量任务异常: {str(e)}")
@@ -880,8 +891,8 @@ async def start_batch_registration(
     - interval_max: 最大间隔秒数
     """
     # 验证参数
-    if request.count < 1 or request.count > 100:
-        raise HTTPException(status_code=400, detail="注册数量必须在 1-100 之间")
+    if request.count < 1 or request.count > 10000:
+        raise HTTPException(status_code=400, detail="注册数量必须在 1-10000 之间")
 
     try:
         EmailServiceType(request.email_service_type)

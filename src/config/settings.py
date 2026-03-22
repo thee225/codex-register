@@ -25,6 +25,7 @@ class SettingCategory(str, Enum):
     CUSTOM_DOMAIN = "moe_mail"
     SECURITY = "security"
     CPA = "cpa"
+    NOTIFICATION = "notification"
 
 
 @dataclass
@@ -382,6 +383,21 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         category=SettingCategory.EMAIL,
         description="Outlook OAuth 默认 Client ID"
     ),
+
+    # Bark 通知
+    "bark_server_url": SettingDefinition(
+        db_key="bark.server_url",
+        default_value="https://api.day.app",
+        category=SettingCategory.NOTIFICATION,
+        description="Bark 服务器地址"
+    ),
+    "bark_key": SettingDefinition(
+        db_key="bark.key",
+        default_value="",
+        category=SettingCategory.NOTIFICATION,
+        description="Bark API Key",
+        is_secret=True
+    ),
 }
 
 # 属性名到数据库键名的映射（用于向后兼容）
@@ -698,6 +714,10 @@ class Settings(BaseModel):
     outlook_health_failure_threshold: int = 5
     outlook_health_disable_duration: int = 60
     outlook_default_client_id: str = "24d9a0ed-8787-4584-883c-2fd79308940a"
+
+    # Bark 通知配置
+    bark_server_url: str = "https://api.day.app"
+    bark_key: Optional[SecretStr] = None
 
 
 # 全局配置实例

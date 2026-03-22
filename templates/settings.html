@@ -42,6 +42,7 @@
                 <button class="tab-btn" data-tab="outlook">📮 Outlook配置</button>
                 <button class="tab-btn" data-tab="registration">⚙️ 注册配置</button>
                 <button class="tab-btn" data-tab="email-code">📧 验证码配置</button>
+                <button class="tab-btn" data-tab="bark">🔔 Bark通知</button>
                 <button class="tab-btn" data-tab="database">💾 数据库</button>
             </div>
 
@@ -539,6 +540,39 @@
             </div>
 
             <!-- 数据库 -->
+            <!-- Bark 通知配置 -->
+            <div class="tab-content" id="bark-tab">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Bark 推送通知</h3>
+                        <span class="hint">配置 Bark 推送服务，注册完成或异常时自动通知到手机</span>
+                    </div>
+                    <div class="card-body">
+                        <form id="bark-settings-form">
+                            <div class="form-group">
+                                <label for="bark-server-url">服务器地址</label>
+                                <input type="text" id="bark-server-url" name="server_url"
+                                    placeholder="https://api.day.app">
+                                <p class="hint">Bark 服务器地址，默认为官方服务器。自建服务器请填写完整地址。</p>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="bark-key">Bark Key</label>
+                                <input type="password" id="bark-key" name="key"
+                                    placeholder="留空保持不变" autocomplete="new-password">
+                                <p class="hint">在 Bark App 中复制的推送 Key。</p>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">保存设置</button>
+                                <button type="button" class="btn btn-secondary" id="test-bark-btn">发送测试通知</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据库管理 -->
             <div class="tab-content" id="database-tab">
                 <div class="card">
                     <div class="card-header">

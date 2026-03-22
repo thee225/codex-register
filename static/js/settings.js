@@ -71,7 +71,10 @@ const elements = {
     // Outlook 设置
     outlookSettingsForm: document.getElementById('outlook-settings-form'),
     // Web UI 访问控制
-    webuiSettingsForm: document.getElementById('webui-settings-form')
+    webuiSettingsForm: document.getElementById('webui-settings-form'),
+    // Bark 通知
+    barkSettingsForm: document.getElementById('bark-settings-form'),
+    testBarkBtn: document.getElementById('test-bark-btn')
 };
 
 // 选中的服务 ID
@@ -87,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCpaServices();
     loadSub2ApiServices();
     loadTmServices();
+    loadBarkSettings();
     initEventListeners();
 });
 
@@ -247,6 +251,15 @@ function initEventListeners() {
     if (elements.webuiSettingsForm) {
         elements.webuiSettingsForm.addEventListener('submit', handleSaveWebuiSettings);
     }
+
+    // Bark 通知
+    if (elements.barkSettingsForm) {
+        elements.barkSettingsForm.addEventListener('submit', handleSaveBarkSettings);
+    }
+    if (elements.testBarkBtn) {
+        elements.testBarkBtn.addEventListener('click', handleTestBark);
+    }
+
     // Team Manager 服务管理
     if (elements.addTmServiceBtn) {
         elements.addTmServiceBtn.addEventListener('click', () => openTmServiceModal());
@@ -1541,4 +1554,59 @@ function escapeHtml(text) {
     const d = document.createElement('div');
     d.textContent = text;
     return d.innerHTML;
+}
+
+// ============== Bark 通知设置 ==============
+
+async function loadBarkSettings() {
+    try {
+        const data = await api.get('/settings/bark');
+        const serverEl = document.getElementById('bark-server-url');
+        const keyEl = document.getElementById('bark-key');
+        if (serverEl) serverEl.value = data.server_url || 'https://api.day.app';
+        if (keyEl) {
+            keyEl.value = '';
+            keyEl.placeholder = data.has_key ? '已配置，留空保持不变' : '请输入 Bark Key';
+        }
+    } catch (error) {
+        console.error('加载 Bark 设置失败:', error);
+    }
+}
+
+async function handleSaveBarkSettings(e) {
+    e.preventDefault();
+    const serverUrl = document.getElementById('bark-server-url').value.trim();
+    const key = document.getElementById('bark-key').value;
+
+    const payload = {
+        server_url: serverUrl || null,
+        key: key || null
+    };
+
+    try {
+        await api.post('/settings/bark', payload);
+        toast.success('Bark 设置已保存');
+        loadBarkSettings();
+    } catch (error) {
+        toast.error('保存失败: ' + error.message);
+    }
+}
+
+async function handleTestBark() {
+    const btn = elements.testBarkBtn;
+    btn.disabled = true;
+    btn.textContent = '发送中...';
+    try {
+        const data = await api.post('/settings/bark/test');
+        if (data.success) {
+            toast.success(data.message);
+        } else {
+            toast.error(data.message);
+        }
+    } catch (error) {
+        toast.error('测试失败: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '发送测试通知';
+    }
 }

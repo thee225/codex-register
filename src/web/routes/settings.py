@@ -779,3 +779,45 @@ async def test_team_manager_connection(request: TeamManagerTestRequest):
 
     success, message = do_test(request.api_url, api_key)
     return {"success": success, "message": message}
+
+
+# ============== Bark 通知设置 ==============
+
+class BarkSettings(BaseModel):
+    """Bark 通知设置"""
+    server_url: Optional[str] = None
+    key: Optional[str] = None
+
+
+@router.get("/bark")
+async def get_bark_settings():
+    """获取 Bark 设置"""
+    settings = get_settings()
+    return {
+        "server_url": settings.bark_server_url,
+        "has_key": bool(settings.bark_key and settings.bark_key.get_secret_value()),
+    }
+
+
+@router.post("/bark")
+async def update_bark_settings(request: BarkSettings):
+    """更新 Bark 设置"""
+    update_dict = {}
+    if request.server_url is not None:
+        update_dict["bark_server_url"] = request.server_url
+    if request.key is not None:
+        update_dict["bark_key"] = request.key
+    if update_dict:
+        update_settings(**update_dict)
+    return {"success": True, "message": "Bark 设置已更新"}
+
+
+@router.post("/bark/test")
+async def test_bark_notification():
+    """发送 Bark 测试通知"""
+    from ...core.notify import send_bark_notification
+    ok = send_bark_notification("Codex Register", "Bark 通知测试成功")
+    if ok:
+        return {"success": True, "message": "测试通知已发送"}
+    else:
+        return {"success": False, "message": "发送失败，请检查 Bark Key 和服务器地址"}
