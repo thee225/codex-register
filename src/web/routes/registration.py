@@ -411,6 +411,21 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                 # 保存到数据库
                 engine.save_to_database(result)
 
+                # 先更新任务状态为完成，再执行可选的上传操作
+                try:
+                    crud.update_registration_task(
+                        db, task_uuid,
+                        status="completed",
+                        completed_at=datetime.utcnow(),
+                        result=result.to_dict()
+                    )
+                    task_manager.update_status(task_uuid, "completed", email=result.email)
+                    logger.info(f"注册任务完成: {task_uuid}, 邮箱: {result.email}")
+                except Exception as status_err:
+                    logger.error(f"更新任务状态异常: {task_uuid}, 错误: {status_err}")
+                    # 至少更新内存状态
+                    task_manager.update_status(task_uuid, "completed", email=result.email)
+
                 # 自动上传到 CPA（可多服务）
                 if auto_upload_cpa:
                     try:
@@ -497,18 +512,6 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                     except Exception as tm_err:
                         log_callback(f"[TM] 上传异常: {tm_err}")
 
-                # 更新任务状态
-                crud.update_registration_task(
-                    db, task_uuid,
-                    status="completed",
-                    completed_at=datetime.utcnow(),
-                    result=result.to_dict()
-                )
-
-                # 更新 TaskManager 状态
-                task_manager.update_status(task_uuid, "completed", email=result.email)
-
-                logger.info(f"注册任务完成: {task_uuid}, 邮箱: {result.email}")
             else:
                 # 更新任务状态为失败
                 crud.update_registration_task(
@@ -537,8 +540,13 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
 
                 # 更新 TaskManager 状态
                 task_manager.update_status(task_uuid, "failed", error=str(e))
-            except:
-                pass
+            except Exception as inner_e:
+                logger.error(f"更新任务状态失败: {task_uuid}, 错误: {inner_e}")
+                # 确保 TaskManager 内存状态至少被更新
+                try:
+                    task_manager.update_status(task_uuid, "failed", error=str(e))
+                except Exception:
+                    pass
 
 
 async def run_registration_task(task_uuid: str, email_service_type: str, proxy: Optional[str], email_service_config: Optional[dict], email_service_id: Optional[int] = None, log_prefix: str = "", batch_id: str = "", auto_upload_cpa: bool = False, cpa_service_ids: List[int] = None, auto_upload_sub2api: bool = False, sub2api_service_ids: List[int] = None, auto_upload_tm: bool = False, tm_service_ids: List[int] = None):

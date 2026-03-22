@@ -771,28 +771,28 @@ class RegistrationEngine:
                     result.error_message = "创建用户账户失败"
                     return result
 
-            # 12.5 新注册账号：create_account 后用全新 session 走登录流程
+            # 13. 新注册账号：create_account 后用全新 session 走登录流程
             # OpenAI 改版后注册流程会要求 add_phone，但登录流程不需要
             # 所以用全新 session + 全新 OAuth 发起登录，获取 workspace 和 token
             if not self._is_existing_account:
-                self._log("12.5 账号已创建，用全新 session 发起登录流程...")
+                self._log("13. 账号已创建，用全新 session 发起登录流程...")
 
-                # 12.5a 创建全新 HTTP 客户端和 session
+                # 创建全新 HTTP 客户端和 session
                 from .openai.oauth import generate_oauth_url
                 new_client = OpenAIHTTPClient(proxy_url=self.proxy_url)
                 new_session = new_client.session
 
-                # 12.5b 生成全新 OAuth URL
+                # 生成全新 OAuth URL
                 settings = get_settings()
                 new_oauth = generate_oauth_url(
                     redirect_uri=settings.openai_redirect_uri,
                     scope=settings.openai_scope,
                     client_id=settings.openai_client_id
                 )
-                self._log("12.5a 新 OAuth URL 已生成")
+                self._log("14. 新 OAuth URL 已生成")
 
-                # 12.5c 访问 OAuth URL 获取 device ID
-                self._log("12.5b 获取新 Device ID...")
+                # 访问 OAuth URL 获取 device ID
+                self._log("15. 获取新 Device ID...")
                 new_session.get(new_oauth.auth_url, timeout=20)
                 new_did = new_session.cookies.get("oai-did")
                 if not new_did:
@@ -800,8 +800,8 @@ class RegistrationEngine:
                     return result
                 self._log(f"新 Device ID: {new_did}")
 
-                # 12.5d Sentinel
-                self._log("12.5c Sentinel 检查...")
+                # Sentinel
+                self._log("16. Sentinel 检查...")
                 new_sen_token = None
                 try:
                     sen_body = f'{{"p":"","id":"{new_did}","flow":"authorize_continue"}}'
@@ -819,8 +819,8 @@ class RegistrationEngine:
                 except Exception as e:
                     self._log(f"Sentinel 检查失败: {e}", "warning")
 
-                # 12.5e 提交邮箱 (login hint)
-                self._log("12.5d 提交邮箱进入登录流程...")
+                # 提交邮箱 (login hint)
+                self._log("17. 提交邮箱进入登录流程...")
                 login_body = f'{{"username":{{"value":"{self.email}","kind":"email"}},"screen_hint":"login"}}'
                 login_headers = {
                     "referer": "https://auth.openai.com/login",
@@ -844,9 +844,9 @@ class RegistrationEngine:
                 login_page = login_data.get("page", {}).get("type", "")
                 self._log(f"登录页面类型: {login_page}")
 
-                # 12.5f 提交密码
+                # 提交密码
                 if login_page == "login_password":
-                    self._log("12.5e 提交密码 (password/verify)...")
+                    self._log("18. 提交密码 (password/verify)...")
                     pwd_resp = new_session.post(
                         "https://auth.openai.com/api/accounts/password/verify",
                         headers={
@@ -870,20 +870,20 @@ class RegistrationEngine:
                         return result
 
                 elif login_page == "email_otp_verification":
-                    self._log("12.5e OTP 已自动发送 (跳过密码)")
+                    self._log("18. OTP 已自动发送 (跳过密码)")
                 else:
                     result.error_message = f"登录流程未知页面类型: {login_page}"
                     return result
 
-                # 12.5g 获取并验证 OTP
-                self._log("12.5f 等待登录验证码...")
+                # 获取并验证 OTP
+                self._log("19. 等待登录验证码...")
                 self._otp_sent_at = time.time()
                 login_code = self._get_verification_code()
                 if not login_code:
                     result.error_message = "登录流程获取验证码失败"
                     return result
 
-                self._log("12.5g 验证登录验证码...")
+                self._log("20. 验证登录验证码...")
                 otp_body = f'{{"code":"{login_code}"}}'
                 otp_resp = new_session.post(
                     OPENAI_API_ENDPOINTS["validate_otp"],
@@ -902,11 +902,8 @@ class RegistrationEngine:
                 otp_page = otp_data.get("page", {}).get("type", "")
                 self._log(f"OTP 验证后页面类型: {otp_page}")
 
-                # 12.5h 处理 consent 页面，获取 workspace
-                # OTP 验证后可能返回 consent 页面，需要获取 workspace 并完成 OAuth
-                self._log("12.5h 获取 Workspace...")
-
-                # 从新 session 的 cookie 解析 workspace
+                # 获取 Workspace
+                self._log("21. 获取 Workspace...")
                 import base64 as b64
                 workspace_id = None
                 try:
@@ -923,12 +920,10 @@ class RegistrationEngine:
                     self._log(f"解析登录 cookie 失败: {e}", "warning")
 
                 if not workspace_id:
-                    # consent 页面可能需要访问才会设置 workspace cookie
                     consent_url = otp_data.get("continue_url", "")
                     if consent_url:
                         self._log(f"访问 consent 页面: {consent_url}")
                         new_session.get(consent_url, timeout=20)
-                        # 重新检查 cookie
                         try:
                             for c in new_session.cookies.jar:
                                 if c.name == "oai-client-auth-session":
@@ -949,8 +944,8 @@ class RegistrationEngine:
                 self._log(f"Workspace ID: {workspace_id}")
                 result.workspace_id = workspace_id
 
-                # 12.5i 选择 Workspace
-                self._log("12.5i 选择 Workspace...")
+                # 选择 Workspace
+                self._log("22. 选择 Workspace...")
                 sel_body = f'{{"workspace_id":"{workspace_id}"}}'
                 sel_resp = new_session.post(
                     OPENAI_API_ENDPOINTS["select_workspace"],
@@ -970,8 +965,8 @@ class RegistrationEngine:
                     return result
                 self._log(f"Continue URL: {sel_continue[:100]}...")
 
-                # 12.5j 跟随重定向链
-                self._log("12.5j 跟随重定向链...")
+                # 跟随重定向链
+                self._log("23. 跟随重定向链...")
                 import urllib.parse
                 current_url = sel_continue
                 callback_url = None
@@ -991,8 +986,8 @@ class RegistrationEngine:
                     return result
                 self._log("找到回调 URL")
 
-                # 12.5k OAuth token exchange
-                self._log("12.5k OAuth token exchange...")
+                # OAuth token exchange
+                self._log("24. OAuth token exchange...")
                 token_json = self.oauth_manager.handle_callback(
                     callback_url=callback_url,
                     expected_state=new_oauth.state,
