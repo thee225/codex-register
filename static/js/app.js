@@ -105,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initVisibilityReconnect();
     restoreActiveTask();
     initAutoUploadOptions();
+    loadIpInfo();
 });
 
 // 初始化注册后自动操作选项（CPA / Sub2API / TM）
@@ -1500,5 +1501,17 @@ async function restoreActiveTask() {
         } catch {
             sessionStorage.removeItem('activeTask');
         }
+    }
+}
+
+async function loadIpInfo() {
+    const el = document.getElementById('ip-info');
+    if (!el) return;
+    try {
+        const data = await api.get('/registration/check-ip');
+        const proxy = data.proxy ? ' (代理)' : ' (直连)';
+        el.textContent = `IP: ${data.ip} (${data.location})${proxy}`;
+    } catch {
+        el.textContent = 'IP: 获取失败';
     }
 }

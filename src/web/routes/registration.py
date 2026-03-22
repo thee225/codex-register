@@ -992,6 +992,26 @@ async def cancel_batch(batch_id: str):
     return {"success": True, "message": "批量任务取消请求已提交"}
 
 
+@router.get("/check-ip")
+async def check_ip():
+    """检查当前出口 IP 和地区"""
+    import re
+    from ...core.http_client import OpenAIHTTPClient
+    settings = get_settings()
+    proxy_url = settings.proxy_url
+    try:
+        client = OpenAIHTTPClient(proxy_url=proxy_url)
+        response = client.get("https://cloudflare.com/cdn-cgi/trace", timeout=10)
+        text = response.text
+        ip_match = re.search(r"ip=(.+)", text)
+        loc_match = re.search(r"loc=([A-Z]+)", text)
+        ip = ip_match.group(1).strip() if ip_match else "未知"
+        loc = loc_match.group(1) if loc_match else "未知"
+        return {"ip": ip, "location": loc, "proxy": bool(proxy_url)}
+    except Exception as e:
+        return {"ip": "获取失败", "location": "未知", "proxy": bool(proxy_url), "error": str(e)}
+
+
 @router.get("/tasks", response_model=TaskListResponse)
 async def list_tasks(
     page: int = Query(1, ge=1),
