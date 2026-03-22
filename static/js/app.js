@@ -1049,7 +1049,7 @@ function resetButtons() {
     elements.cancelBtn.disabled = true;
     currentTask = null;
     currentBatch = null;
-    isBatchMode = false;
+    isBatchMode = elements.regMode.value === 'batch';
     // 重置完成标志
     taskCompleted = false;
     batchCompleted = false;
