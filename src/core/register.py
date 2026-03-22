@@ -277,18 +277,24 @@ class RegistrationEngine:
             self._log(f"Sentinel 检查异常: {e}", "warning")
             return None
 
-    def _submit_signup_form(self, did: str, sen_token: Optional[str]) -> SignupFormResult:
+    def _submit_signup_form(self, did: str, sen_token: Optional[str], screen_hint: str = "signup") -> SignupFormResult:
         """
-        提交注册表单
+        提交注册/登录表单
+
+        Args:
+            did: Device ID
+            sen_token: Sentinel token
+            screen_hint: 'signup' 用于注册，'login' 用于登录
 
         Returns:
             SignupFormResult: 提交结果，包含账号状态判断
         """
         try:
-            signup_body = f'{{"username":{{"value":"{self.email}","kind":"email"}},"screen_hint":"signup"}}'
+            signup_body = f'{{"username":{{"value":"{self.email}","kind":"email"}},"screen_hint":"{screen_hint}"}}'
 
+            referer = "https://auth.openai.com/login" if screen_hint == "login" else "https://auth.openai.com/create-account"
             headers = {
-                "referer": "https://auth.openai.com/create-account",
+                "referer": referer,
                 "accept": "application/json",
                 "content-type": "application/json",
             }
@@ -303,7 +309,7 @@ class RegistrationEngine:
                 data=signup_body,
             )
 
-            self._log(f"提交注册表单状态: {response.status_code}")
+            self._log(f"提交表单状态 (hint={screen_hint}): {response.status_code}")
 
             if response.status_code != 200:
                 return SignupFormResult(
@@ -337,7 +343,7 @@ class RegistrationEngine:
                 return SignupFormResult(success=True)
 
         except Exception as e:
-            self._log(f"提交注册表单失败: {e}", "error")
+            self._log(f"提交表单失败: {e}", "error")
             return SignupFormResult(success=False, error_message=str(e))
 
     def _register_password(self) -> Tuple[bool, Optional[str]]:
@@ -764,6 +770,262 @@ class RegistrationEngine:
                 if not self._create_user_account():
                     result.error_message = "创建用户账户失败"
                     return result
+
+            # 12.5 新注册账号：create_account 后用全新 session 走登录流程
+            # OpenAI 改版后注册流程会要求 add_phone，但登录流程不需要
+            # 所以用全新 session + 全新 OAuth 发起登录，获取 workspace 和 token
+            if not self._is_existing_account:
+                self._log("12.5 账号已创建，用全新 session 发起登录流程...")
+
+                # 12.5a 创建全新 HTTP 客户端和 session
+                from .openai.oauth import generate_oauth_url
+                new_client = OpenAIHTTPClient(proxy_url=self.proxy_url)
+                new_session = new_client.session
+
+                # 12.5b 生成全新 OAuth URL
+                settings = get_settings()
+                new_oauth = generate_oauth_url(
+                    redirect_uri=settings.openai_redirect_uri,
+                    scope=settings.openai_scope,
+                    client_id=settings.openai_client_id
+                )
+                self._log("12.5a 新 OAuth URL 已生成")
+
+                # 12.5c 访问 OAuth URL 获取 device ID
+                self._log("12.5b 获取新 Device ID...")
+                new_session.get(new_oauth.auth_url, timeout=20)
+                new_did = new_session.cookies.get("oai-did")
+                if not new_did:
+                    result.error_message = "登录流程获取 Device ID 失败"
+                    return result
+                self._log(f"新 Device ID: {new_did}")
+
+                # 12.5d Sentinel
+                self._log("12.5c Sentinel 检查...")
+                new_sen_token = None
+                try:
+                    sen_body = f'{{"p":"","id":"{new_did}","flow":"authorize_continue"}}'
+                    sen_resp = new_client.post(
+                        OPENAI_API_ENDPOINTS["sentinel"],
+                        headers={
+                            "origin": "https://sentinel.openai.com",
+                            "referer": "https://sentinel.openai.com/backend-api/sentinel/frame.html?sv=20260219f9f6",
+                            "content-type": "text/plain;charset=UTF-8",
+                        },
+                        data=sen_body,
+                    )
+                    if sen_resp.status_code == 200:
+                        new_sen_token = sen_resp.json().get("token")
+                except Exception as e:
+                    self._log(f"Sentinel 检查失败: {e}", "warning")
+
+                # 12.5e 提交邮箱 (login hint)
+                self._log("12.5d 提交邮箱进入登录流程...")
+                login_body = f'{{"username":{{"value":"{self.email}","kind":"email"}},"screen_hint":"login"}}'
+                login_headers = {
+                    "referer": "https://auth.openai.com/login",
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                }
+                if new_sen_token:
+                    sentinel = f'{{"p": "", "t": "", "c": "{new_sen_token}", "id": "{new_did}", "flow": "authorize_continue"}}'
+                    login_headers["openai-sentinel-token"] = sentinel
+
+                login_resp = new_session.post(
+                    OPENAI_API_ENDPOINTS["signup"],
+                    headers=login_headers,
+                    data=login_body,
+                )
+                if login_resp.status_code != 200:
+                    result.error_message = f"登录流程提交邮箱失败: HTTP {login_resp.status_code}"
+                    return result
+
+                login_data = login_resp.json()
+                login_page = login_data.get("page", {}).get("type", "")
+                self._log(f"登录页面类型: {login_page}")
+
+                # 12.5f 提交密码
+                if login_page == "login_password":
+                    self._log("12.5e 提交密码 (password/verify)...")
+                    pwd_resp = new_session.post(
+                        "https://auth.openai.com/api/accounts/password/verify",
+                        headers={
+                            "referer": "https://auth.openai.com/log-in/password",
+                            "accept": "application/json",
+                            "content-type": "application/json",
+                        },
+                        data=json.dumps({"password": self.password}),
+                    )
+                    if pwd_resp.status_code != 200:
+                        self._log(f"密码验证失败: {pwd_resp.text[:200]}", "error")
+                        result.error_message = "登录流程密码验证失败"
+                        return result
+
+                    pwd_data = pwd_resp.json()
+                    pwd_page = pwd_data.get("page", {}).get("type", "")
+                    self._log(f"密码验证后页面类型: {pwd_page}")
+
+                    if pwd_page != "email_otp_verification":
+                        result.error_message = f"密码验证后未进入 OTP: {pwd_page}"
+                        return result
+
+                elif login_page == "email_otp_verification":
+                    self._log("12.5e OTP 已自动发送 (跳过密码)")
+                else:
+                    result.error_message = f"登录流程未知页面类型: {login_page}"
+                    return result
+
+                # 12.5g 获取并验证 OTP
+                self._log("12.5f 等待登录验证码...")
+                self._otp_sent_at = time.time()
+                login_code = self._get_verification_code()
+                if not login_code:
+                    result.error_message = "登录流程获取验证码失败"
+                    return result
+
+                self._log("12.5g 验证登录验证码...")
+                otp_body = f'{{"code":"{login_code}"}}'
+                otp_resp = new_session.post(
+                    OPENAI_API_ENDPOINTS["validate_otp"],
+                    headers={
+                        "referer": "https://auth.openai.com/email-verification",
+                        "accept": "application/json",
+                        "content-type": "application/json",
+                    },
+                    data=otp_body,
+                )
+                if otp_resp.status_code != 200:
+                    result.error_message = "登录流程验证码验证失败"
+                    return result
+
+                otp_data = otp_resp.json()
+                otp_page = otp_data.get("page", {}).get("type", "")
+                self._log(f"OTP 验证后页面类型: {otp_page}")
+
+                # 12.5h 处理 consent 页面，获取 workspace
+                # OTP 验证后可能返回 consent 页面，需要获取 workspace 并完成 OAuth
+                self._log("12.5h 获取 Workspace...")
+
+                # 从新 session 的 cookie 解析 workspace
+                import base64 as b64
+                workspace_id = None
+                try:
+                    for c in new_session.cookies.jar:
+                        if c.name == "oai-client-auth-session":
+                            segs = c.value.split(".")
+                            pad = "=" * ((4 - (len(segs[0]) % 4)) % 4)
+                            decoded = json.loads(b64.urlsafe_b64decode((segs[0] + pad).encode("ascii")).decode("utf-8"))
+                            workspaces = decoded.get("workspaces") or []
+                            if workspaces:
+                                workspace_id = str(workspaces[0].get("id", "")).strip()
+                            break
+                except Exception as e:
+                    self._log(f"解析登录 cookie 失败: {e}", "warning")
+
+                if not workspace_id:
+                    # consent 页面可能需要访问才会设置 workspace cookie
+                    consent_url = otp_data.get("continue_url", "")
+                    if consent_url:
+                        self._log(f"访问 consent 页面: {consent_url}")
+                        new_session.get(consent_url, timeout=20)
+                        # 重新检查 cookie
+                        try:
+                            for c in new_session.cookies.jar:
+                                if c.name == "oai-client-auth-session":
+                                    segs = c.value.split(".")
+                                    pad = "=" * ((4 - (len(segs[0]) % 4)) % 4)
+                                    decoded = json.loads(b64.urlsafe_b64decode((segs[0] + pad).encode("ascii")).decode("utf-8"))
+                                    workspaces = decoded.get("workspaces") or []
+                                    if workspaces:
+                                        workspace_id = str(workspaces[0].get("id", "")).strip()
+                                    break
+                        except Exception:
+                            pass
+
+                if not workspace_id:
+                    result.error_message = "登录流程无法获取 Workspace ID"
+                    return result
+
+                self._log(f"Workspace ID: {workspace_id}")
+                result.workspace_id = workspace_id
+
+                # 12.5i 选择 Workspace
+                self._log("12.5i 选择 Workspace...")
+                sel_body = f'{{"workspace_id":"{workspace_id}"}}'
+                sel_resp = new_session.post(
+                    OPENAI_API_ENDPOINTS["select_workspace"],
+                    headers={
+                        "referer": "https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
+                        "content-type": "application/json",
+                    },
+                    data=sel_body,
+                )
+                if sel_resp.status_code != 200:
+                    result.error_message = f"选择 Workspace 失败: HTTP {sel_resp.status_code}"
+                    return result
+
+                sel_continue = (sel_resp.json() or {}).get("continue_url", "").strip()
+                if not sel_continue:
+                    result.error_message = "workspace/select 缺少 continue_url"
+                    return result
+                self._log(f"Continue URL: {sel_continue[:100]}...")
+
+                # 12.5j 跟随重定向链
+                self._log("12.5j 跟随重定向链...")
+                import urllib.parse
+                current_url = sel_continue
+                callback_url = None
+                for i in range(6):
+                    resp_redir = new_session.get(current_url, allow_redirects=False, timeout=15)
+                    location = resp_redir.headers.get("Location", "")
+                    if resp_redir.status_code not in [301, 302, 303, 307, 308] or not location:
+                        break
+                    next_url = urllib.parse.urljoin(current_url, location)
+                    if "code=" in next_url and "state=" in next_url:
+                        callback_url = next_url
+                        break
+                    current_url = next_url
+
+                if not callback_url:
+                    result.error_message = "登录流程未找到回调 URL"
+                    return result
+                self._log("找到回调 URL")
+
+                # 12.5k OAuth token exchange
+                self._log("12.5k OAuth token exchange...")
+                token_json = self.oauth_manager.handle_callback(
+                    callback_url=callback_url,
+                    expected_state=new_oauth.state,
+                    code_verifier=new_oauth.code_verifier
+                )
+                if not token_json:
+                    result.error_message = "登录流程 OAuth 回调失败"
+                    return result
+
+                # 填充结果
+                result.account_id = token_json.get("account_id", "")
+                result.access_token = token_json.get("access_token", "")
+                result.refresh_token = token_json.get("refresh_token", "")
+                result.id_token = token_json.get("id_token", "")
+                result.password = self.password or ""
+                result.source = "register"
+                result.email = self.email
+                result.success = True
+                result.metadata = {
+                    "email_service": self.email_service.service_type.value,
+                    "proxy_used": self.proxy_url,
+                    "registered_at": datetime.now().isoformat(),
+                    "login_method": "fresh_session_login",
+                }
+
+                self._log("=" * 60)
+                self._log("注册成功! (登录流程)")
+                self._log(f"邮箱: {result.email}")
+                self._log(f"Account ID: {result.account_id}")
+                self._log(f"Workspace ID: {result.workspace_id}")
+                self._log("=" * 60)
+
+                return result
 
             # 13. 获取 Workspace ID
             self._log("13. 获取 Workspace ID...")
