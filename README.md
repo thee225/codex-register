@@ -126,11 +126,11 @@ python webui.py --host 0.0.0.0 --port 8080 --access-password mypassword
 
 ### Docker 部署
 
-项目支持通过 Docker 进行容器化部署。Docker 镜像已托管至 GitHub Container Registry (GHCR)。
+项目支持通过 Docker 进行容器化部署。建议由 GitHub Actions 统一构建镜像并推送到 GitHub Container Registry (GHCR)，再由外部 Ansible 指定版本部署到各台 VPS。
 
 #### 使用 docker-compose (推荐)
 
-在项目根目录下，直接使用 `docker-compose` 启动：
+在项目根目录下，直接使用 `docker-compose` 本地启动：
 
 ```bash
 docker-compose up -d
@@ -148,8 +148,9 @@ docker run -d \
   -e WEBUI_PORT=1455 \
   -e WEBUI_ACCESS_PASSWORD=your_secure_password \
   -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
   --name codex-register \
-  ghcr.io/yunxilyf/codex-register:latest
+  ghcr.io/thee225/codex-register:latest
 ```
 
 环境变量说明：
@@ -160,6 +161,29 @@ docker run -d \
 - `LOG_LEVEL`: 日志级别，如 `info`, `debug`
 
 > **注意**：`-v $(pwd)/data:/app/data` 挂载参数非常重要，它确保了你的数据库文件和账户信息在容器重启或更新后不会丢失。
+
+#### GitHub Actions 构建镜像
+
+仓库内已提供 [`docker-publish.yml`](.github/workflows/docker-publish.yml)：
+
+- 推送到 `master` / `main` 时，自动构建并推送 GHCR 镜像
+- 打 `v*.*.*` tag 时，额外产出版本号 tag
+- PR 只验证镜像能否构建，不会推送
+
+默认会生成这些 tag：
+
+- `ghcr.io/thee225/codex-register:master` 或 `:main`
+- `ghcr.io/thee225/codex-register:sha-<commit>`
+- 默认分支额外有 `:latest`
+- Git tag 发布时有 `:v1.2.3`、`:1.2`
+
+如果你在另一台机器用 Ansible 部署，推荐只部署固定版本 tag，例如：
+
+```bash
+docker pull ghcr.io/thee225/codex-register:sha-418faf6
+```
+
+不要长期依赖 `latest`，这样回滚和批量发版都更稳。
 
 ### 使用远程 PostgreSQL
 
