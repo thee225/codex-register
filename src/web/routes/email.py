@@ -146,6 +146,7 @@ async def get_email_services_stats():
             'temp_mail_count': 0,
             'duck_mail_count': 0,
             'freemail_count': 0,
+            'generator_email_count': 0,
             'imap_mail_count': 0,
             'tempmail_available': True,  # 临时邮箱始终可用
             'enabled_count': enabled_count
@@ -162,6 +163,8 @@ async def get_email_services_stats():
                 stats['duck_mail_count'] = count
             elif service_type == 'freemail':
                 stats['freemail_count'] = count
+            elif service_type == 'generator_email':
+                stats['generator_email_count'] = count
             elif service_type == 'imap_mail':
                 stats['imap_mail_count'] = count
 
@@ -245,6 +248,16 @@ async def get_service_types():
                     {"name": "use_ssl", "label": "使用 SSL", "required": False, "default": True},
                     {"name": "email", "label": "邮箱地址", "required": True},
                     {"name": "password", "label": "密码/授权码", "required": True, "secret": True},
+                ]
+            },
+            {
+                "value": "generator_email",
+                "label": "Generator.email",
+                "description": "基于 generator.email 网页解析的临时邮箱服务",
+                "config_fields": [
+                    {"name": "base_url", "label": "入口地址", "required": False, "default": "https://generator.email"},
+                    {"name": "poll_interval", "label": "轮询间隔", "required": False, "default": 6},
+                    {"name": "timeout", "label": "超时时间", "required": False, "default": 30},
                 ]
             }
         ]

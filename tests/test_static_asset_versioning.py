@@ -1,6 +1,8 @@
 from pathlib import Path
 import importlib
 
+from fastapi.testclient import TestClient
+
 web_app = importlib.import_module("src.web.app")
 
 
@@ -26,3 +28,13 @@ def test_index_template_uses_versioned_static_assets():
     assert '/static/css/style.css?v={{ static_version }}' in template
     assert '/static/js/utils.js?v={{ static_version }}' in template
     assert '/static/js/app.js?v={{ static_version }}' in template
+
+
+def test_login_page_renders_successfully():
+    client = TestClient(web_app.create_app())
+
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    assert "访问验证" in response.text
+    assert 'form method="post" action="/login"' in response.text

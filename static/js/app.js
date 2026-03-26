@@ -24,7 +24,8 @@ let availableServices = {
     moe_mail: { available: false, services: [] },
     temp_mail: { available: false, services: [] },
     duck_mail: { available: false, services: [] },
-    freemail: { available: false, services: [] }
+    freemail: { available: false, services: [] },
+    generator_email: { available: false, services: [] }
 };
 
 // WebSocket 相关变量
@@ -373,6 +374,23 @@ function updateEmailServiceOptions() {
 
         select.appendChild(optgroup);
     }
+
+    // Generator.email
+    if (availableServices.generator_email && availableServices.generator_email.available) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = `📨 Generator.email (${availableServices.generator_email.count} 个服务)`;
+
+        availableServices.generator_email.services.forEach(service => {
+            const option = document.createElement('option');
+            option.value = `generator_email:${service.id}`;
+            option.textContent = service.name;
+            option.dataset.type = 'generator_email';
+            option.dataset.serviceId = service.id;
+            optgroup.appendChild(option);
+        });
+
+        select.appendChild(optgroup);
+    }
 }
 
 // 处理邮箱服务切换
@@ -422,6 +440,11 @@ function handleServiceChange(e) {
         const service = availableServices.freemail.services.find(s => s.id == id);
         if (service) {
             addLog('info', `[系统] 已选择 Freemail 服务: ${service.name}`);
+        }
+    } else if (type === 'generator_email') {
+        const service = availableServices.generator_email.services.find(s => s.id == id);
+        if (service) {
+            addLog('info', `[系统] 已选择 Generator.email 服务: ${service.name}`);
         }
     }
 }

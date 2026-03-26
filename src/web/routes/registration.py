@@ -372,6 +372,20 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                         logger.info(f"使用数据库 Freemail 服务: {db_service.name}")
                     else:
                         raise ValueError("没有可用的 Freemail 邮箱服务，请先在邮箱服务页面添加服务")
+                elif service_type == EmailServiceType.GENERATOR_EMAIL:
+                    from ...database.models import EmailService as EmailServiceModel
+
+                    db_service = db.query(EmailServiceModel).filter(
+                        EmailServiceModel.service_type == "generator_email",
+                        EmailServiceModel.enabled == True
+                    ).order_by(EmailServiceModel.priority.asc()).first()
+
+                    if db_service and db_service.config:
+                        config = _normalize_email_service_config(service_type, db_service.config, actual_proxy_url)
+                        crud.update_registration_task(db, task_uuid, email_service_id=db_service.id)
+                        logger.info(f"使用数据库 Generator.email 服务: {db_service.name}")
+                    else:
+                        raise ValueError("没有可用的 Generator.email 邮箱服务，请先在邮箱服务中添加")
                 elif service_type == EmailServiceType.IMAP_MAIL:
                     from ...database.models import EmailService as EmailServiceModel
 
@@ -1167,6 +1181,11 @@ async def get_available_email_services():
             "count": 0,
             "services": []
         },
+        "generator_email": {
+            "available": False,
+            "count": 0,
+            "services": []
+        },
         "imap_mail": {
             "available": False,
             "count": 0,
@@ -1279,6 +1298,24 @@ async def get_available_email_services():
 
         result["freemail"]["count"] = len(freemail_services)
         result["freemail"]["available"] = len(freemail_services) > 0
+
+        generator_email_services = db.query(EmailServiceModel).filter(
+            EmailServiceModel.service_type == "generator_email",
+            EmailServiceModel.enabled == True
+        ).order_by(EmailServiceModel.priority.asc()).all()
+
+        for service in generator_email_services:
+            config = service.config or {}
+            result["generator_email"]["services"].append({
+                "id": service.id,
+                "name": service.name,
+                "type": "generator_email",
+                "base_url": config.get("base_url"),
+                "priority": service.priority
+            })
+
+        result["generator_email"]["count"] = len(generator_email_services)
+        result["generator_email"]["available"] = len(generator_email_services) > 0
 
         imap_mail_services = db.query(EmailServiceModel).filter(
             EmailServiceModel.service_type == "imap_mail",

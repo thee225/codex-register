@@ -133,6 +133,7 @@ class RegistrationEngine:
         self.logs: list = []
         self._otp_sent_at: Optional[float] = None  # OTP 发送时间戳
         self._is_existing_account: bool = False  # 是否为已注册账号（用于自动登录）
+        self._token_acquisition_requires_login: bool = False  # 新注册账号需要二次登录拿 token
 
     def _log(self, message: str, level: str = "info"):
         """记录日志"""
@@ -253,29 +254,62 @@ class RegistrationEngine:
     def _check_sentinel(self, did: str) -> Optional[str]:
         """检查 Sentinel 拦截"""
         try:
-            sen_req_body = f'{{"p":"","id":"{did}","flow":"authorize_continue"}}'
-
-            response = self.http_client.post(
-                OPENAI_API_ENDPOINTS["sentinel"],
-                headers={
-                    "origin": "https://sentinel.openai.com",
-                    "referer": "https://sentinel.openai.com/backend-api/sentinel/frame.html?sv=20260219f9f6",
-                    "content-type": "text/plain;charset=UTF-8",
-                },
-                data=sen_req_body,
-            )
-
-            if response.status_code == 200:
-                sen_token = response.json().get("token")
+            sen_token = self.http_client.check_sentinel(did)
+            if sen_token:
                 self._log(f"Sentinel token 获取成功")
                 return sen_token
-            else:
-                self._log(f"Sentinel 检查失败: {response.status_code}", "warning")
-                return None
+            self._log("Sentinel 检查失败: 未获取到 token", "warning")
+            return None
 
         except Exception as e:
             self._log(f"Sentinel 检查异常: {e}", "warning")
             return None
+
+    def _extract_workspace_id_from_auth_cookie(self, auth_cookie: Optional[str]) -> Optional[str]:
+        """从 oai-client-auth-session cookie 解析 Workspace ID。"""
+        if not auth_cookie:
+            return None
+
+        import base64
+        import json as json_module
+
+        try:
+            segments = auth_cookie.split(".")
+            if not segments:
+                return None
+
+            payload = segments[0]
+            pad = "=" * ((4 - (len(payload) % 4)) % 4)
+            decoded = base64.urlsafe_b64decode((payload + pad).encode("ascii"))
+            auth_json = json_module.loads(decoded.decode("utf-8"))
+            workspaces = auth_json.get("workspaces") or []
+            if not workspaces:
+                return None
+            workspace_id = str((workspaces[0] or {}).get("id") or "").strip()
+            return workspace_id or None
+        except Exception:
+            return None
+
+    def _extract_workspace_id_from_cookies(self, cookies: Any) -> Optional[str]:
+        """兼容 dict / cookie jar，从 cookies 中解析 Workspace ID。"""
+        auth_cookie = None
+
+        if cookies is None:
+            return None
+
+        if hasattr(cookies, "get"):
+            auth_cookie = cookies.get("oai-client-auth-session")
+
+        if not auth_cookie and hasattr(cookies, "jar"):
+            try:
+                for cookie in cookies.jar:
+                    if getattr(cookie, "name", "") == "oai-client-auth-session":
+                        auth_cookie = getattr(cookie, "value", None)
+                        break
+            except Exception:
+                auth_cookie = None
+
+        return self._extract_workspace_id_from_auth_cookie(auth_cookie)
 
     def _submit_signup_form(self, did: str, sen_token: Optional[str], screen_hint: str = "signup") -> SignupFormResult:
         """
@@ -524,38 +558,13 @@ class RegistrationEngine:
                 self._log("未能获取到授权 Cookie", "error")
                 return None
 
-            # 解码 JWT
-            import base64
-            import json as json_module
-
-            try:
-                segments = auth_cookie.split(".")
-                if len(segments) < 1:
-                    self._log("授权 Cookie 格式错误", "error")
-                    return None
-
-                # 解码第一个 segment
-                payload = segments[0]
-                pad = "=" * ((4 - (len(payload) % 4)) % 4)
-                decoded = base64.urlsafe_b64decode((payload + pad).encode("ascii"))
-                auth_json = json_module.loads(decoded.decode("utf-8"))
-
-                workspaces = auth_json.get("workspaces") or []
-                if not workspaces:
-                    self._log("授权 Cookie 里没有 workspace 信息", "error")
-                    return None
-
-                workspace_id = str((workspaces[0] or {}).get("id") or "").strip()
-                if not workspace_id:
-                    self._log("无法解析 workspace_id", "error")
-                    return None
-
-                self._log(f"Workspace ID: {workspace_id}")
-                return workspace_id
-
-            except Exception as e:
-                self._log(f"解析授权 Cookie 失败: {e}", "error")
+            workspace_id = self._extract_workspace_id_from_auth_cookie(auth_cookie)
+            if not workspace_id:
+                self._log("无法解析 workspace_id", "error")
                 return None
+
+            self._log(f"Workspace ID: {workspace_id}")
+            return workspace_id
 
         except Exception as e:
             self._log(f"获取 Workspace ID 失败: {e}", "error")
@@ -672,6 +681,7 @@ class RegistrationEngine:
         result = RegistrationResult(success=False, logs=self.logs)
 
         try:
+            self._token_acquisition_requires_login = False
             self._log("=" * 60)
             self._log("开始注册流程")
             self._log("=" * 60)
@@ -776,6 +786,7 @@ class RegistrationEngine:
             # 所以用全新 session + 全新 OAuth 发起登录，获取 workspace 和 token
             if not self._is_existing_account:
                 self._log("13. 账号已创建，用全新 session 发起登录流程...")
+                self._token_acquisition_requires_login = True
 
                 # 创建全新 HTTP 客户端和 session
                 from .openai.oauth import generate_oauth_url
@@ -804,18 +815,7 @@ class RegistrationEngine:
                 self._log("16. Sentinel 检查...")
                 new_sen_token = None
                 try:
-                    sen_body = f'{{"p":"","id":"{new_did}","flow":"authorize_continue"}}'
-                    sen_resp = new_client.post(
-                        OPENAI_API_ENDPOINTS["sentinel"],
-                        headers={
-                            "origin": "https://sentinel.openai.com",
-                            "referer": "https://sentinel.openai.com/backend-api/sentinel/frame.html?sv=20260219f9f6",
-                            "content-type": "text/plain;charset=UTF-8",
-                        },
-                        data=sen_body,
-                    )
-                    if sen_resp.status_code == 200:
-                        new_sen_token = sen_resp.json().get("token")
+                    new_sen_token = new_client.check_sentinel(new_did)
                 except Exception as e:
                     self._log(f"Sentinel 检查失败: {e}", "warning")
 
@@ -904,18 +904,9 @@ class RegistrationEngine:
 
                 # 获取 Workspace
                 self._log("21. 获取 Workspace...")
-                import base64 as b64
                 workspace_id = None
                 try:
-                    for c in new_session.cookies.jar:
-                        if c.name == "oai-client-auth-session":
-                            segs = c.value.split(".")
-                            pad = "=" * ((4 - (len(segs[0]) % 4)) % 4)
-                            decoded = json.loads(b64.urlsafe_b64decode((segs[0] + pad).encode("ascii")).decode("utf-8"))
-                            workspaces = decoded.get("workspaces") or []
-                            if workspaces:
-                                workspace_id = str(workspaces[0].get("id", "")).strip()
-                            break
+                    workspace_id = self._extract_workspace_id_from_cookies(new_session.cookies)
                 except Exception as e:
                     self._log(f"解析登录 cookie 失败: {e}", "warning")
 
@@ -925,17 +916,9 @@ class RegistrationEngine:
                         self._log(f"访问 consent 页面: {consent_url}")
                         new_session.get(consent_url, timeout=20)
                         try:
-                            for c in new_session.cookies.jar:
-                                if c.name == "oai-client-auth-session":
-                                    segs = c.value.split(".")
-                                    pad = "=" * ((4 - (len(segs[0]) % 4)) % 4)
-                                    decoded = json.loads(b64.urlsafe_b64decode((segs[0] + pad).encode("ascii")).decode("utf-8"))
-                                    workspaces = decoded.get("workspaces") or []
-                                    if workspaces:
-                                        workspace_id = str(workspaces[0].get("id", "")).strip()
-                                    break
-                        except Exception:
-                            pass
+                            workspace_id = self._extract_workspace_id_from_cookies(new_session.cookies)
+                        except Exception as e:
+                            self._log(f"再次解析登录 cookie 失败: {e}", "warning")
 
                 if not workspace_id:
                     result.error_message = "登录流程无法获取 Workspace ID"
@@ -1005,12 +988,17 @@ class RegistrationEngine:
                 result.password = self.password or ""
                 result.source = "register"
                 result.email = self.email
+                session_cookie = new_session.cookies.get("__Secure-next-auth.session-token")
+                if session_cookie:
+                    self.session_token = session_cookie
+                    result.session_token = session_cookie
                 result.success = True
                 result.metadata = {
                     "email_service": self.email_service.service_type.value,
                     "proxy_used": self.proxy_url,
                     "registered_at": datetime.now().isoformat(),
                     "login_method": "fresh_session_login",
+                    "token_acquired_via_relogin": True,
                 }
 
                 self._log("=" * 60)
@@ -1086,6 +1074,7 @@ class RegistrationEngine:
                 "proxy_used": self.proxy_url,
                 "registered_at": datetime.now().isoformat(),
                 "is_existing_account": self._is_existing_account,
+                "token_acquired_via_relogin": False,
             }
 
             return result
