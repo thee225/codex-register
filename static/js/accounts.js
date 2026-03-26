@@ -13,6 +13,11 @@ let selectAllPages = false;  // 是否选中了全部页
 let currentFilters = { status: '', email_service: '', search: '' };  // 当前筛选条件
 const refreshingAccountIds = new Set();
 let isBatchValidating = false;
+let monitorLogPollingInterval = null;
+let lastMonitorLogId = 0;
+let accountMonitorConfig = null;
+let accountMonitorEmailServices = [];
+let accountMonitorCpaServices = [];
 
 // DOM 元素
 const elements = {
@@ -38,7 +43,21 @@ const elements = {
     pageInfo: document.getElementById('page-info'),
     detailModal: document.getElementById('detail-modal'),
     modalBody: document.getElementById('modal-body'),
-    closeModal: document.getElementById('close-modal')
+    closeModal: document.getElementById('close-modal'),
+    accountMonitorEnabled: document.getElementById('account-monitor-enabled'),
+    accountMonitorInterval: document.getElementById('account-monitor-interval'),
+    accountMonitorSleep: document.getElementById('account-monitor-sleep'),
+    accountMonitorAutoRegisterEnabled: document.getElementById('account-monitor-auto-register-enabled'),
+    accountMonitorThreshold: document.getElementById('account-monitor-threshold'),
+    accountMonitorBatchCount: document.getElementById('account-monitor-batch-count'),
+    accountMonitorEmailService: document.getElementById('account-monitor-email-service'),
+    accountMonitorAutoUploadCpa: document.getElementById('account-monitor-auto-upload-cpa'),
+    accountMonitorCpaServices: document.getElementById('account-monitor-cpa-services'),
+    accountMonitorSaveBtn: document.getElementById('account-monitor-save-btn'),
+    accountMonitorTriggerBtn: document.getElementById('account-monitor-trigger-btn'),
+    accountMonitorStatusBadge: document.getElementById('account-monitor-status-badge'),
+    accountMonitorLog: document.getElementById('account-monitor-log'),
+    accountMonitorClearLogBtn: document.getElementById('account-monitor-clear-log-btn')
 };
 
 // 初始化
@@ -48,6 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
     updateBatchButtons();  // 初始化按钮状态
     renderSelectAllBanner();
+    startAccountMonitorLogPolling();
+    loadAccountMonitorOptions().then(loadAccountMonitorConfig);
 });
 
 // 事件监听
@@ -170,6 +191,21 @@ function initEventListeners() {
         }
     });
 
+    if (elements.accountMonitorSaveBtn) {
+        elements.accountMonitorSaveBtn.addEventListener('click', handleSaveAccountMonitorConfig);
+    }
+
+    if (elements.accountMonitorTriggerBtn) {
+        elements.accountMonitorTriggerBtn.addEventListener('click', handleTriggerAccountMonitor);
+    }
+
+    if (elements.accountMonitorClearLogBtn) {
+        elements.accountMonitorClearLogBtn.addEventListener('click', () => {
+            if (!elements.accountMonitorLog) return;
+            elements.accountMonitorLog.innerHTML = '<div class="line info">[系统] 日志已清空</div>';
+        });
+    }
+
     // 点击其他地方关闭下拉菜单
     document.addEventListener('click', () => {
         elements.exportMenu.classList.remove('active');
@@ -264,6 +300,262 @@ async function loadAccounts() {
         `;
     } finally {
         isLoading = false;
+    }
+}
+
+async function loadAccountMonitorConfig() {
+    if (!elements.accountMonitorEnabled) return;
+
+    try {
+        const config = await api.get('/account-monitor/config');
+        accountMonitorConfig = config;
+        elements.accountMonitorEnabled.checked = !!config.enabled;
+        elements.accountMonitorInterval.value = config.interval_minutes ?? 60;
+        elements.accountMonitorSleep.value = config.sleep_seconds ?? 1;
+        elements.accountMonitorAutoRegisterEnabled.checked = !!config.auto_register_enabled;
+        elements.accountMonitorThreshold.value = config.healthy_threshold ?? 10;
+        elements.accountMonitorBatchCount.value = config.register_batch_count ?? 5;
+        if (elements.accountMonitorEmailService) {
+            elements.accountMonitorEmailService.value = config.email_service_selection || 'tempmail:default';
+            if (elements.accountMonitorEmailService.value !== (config.email_service_selection || 'tempmail:default')) {
+                ensureMonitorEmailServiceOption(config.email_service_selection || 'tempmail:default');
+                elements.accountMonitorEmailService.value = config.email_service_selection || 'tempmail:default';
+            }
+        }
+        if (elements.accountMonitorAutoUploadCpa) {
+            elements.accountMonitorAutoUploadCpa.checked = !!config.auto_upload_cpa;
+        }
+        syncMonitorCpaServiceSelection(config.cpa_service_ids || []);
+        updateAccountMonitorBadge(!!config.enabled);
+    } catch (error) {
+        appendMonitorLog('error', `加载账号体检配置失败: ${error.message}`);
+    }
+}
+
+async function loadAccountMonitorOptions() {
+    await Promise.all([
+        loadAccountMonitorEmailServices(),
+        loadAccountMonitorCpaServices(),
+    ]);
+}
+
+async function loadAccountMonitorEmailServices() {
+    if (!elements.accountMonitorEmailService) return;
+
+    try {
+        const data = await api.get('/registration/available-services');
+        accountMonitorEmailServices = flattenAccountMonitorEmailServices(data);
+        renderAccountMonitorEmailServiceOptions(accountMonitorEmailServices);
+    } catch (error) {
+        elements.accountMonitorEmailService.innerHTML = '<option value="">加载失败</option>';
+        appendMonitorLog('error', `加载补货邮箱服务失败: ${error.message}`);
+    }
+}
+
+function flattenAccountMonitorEmailServices(data) {
+    const serviceOrder = ['tempmail', 'outlook', 'moe_mail', 'temp_mail', 'duck_mail', 'freemail', 'generator_email', 'imap_mail'];
+    const result = [];
+
+    serviceOrder.forEach((type) => {
+        const group = data?.[type];
+        if (!group?.available || !Array.isArray(group.services)) return;
+
+        group.services.forEach((service) => {
+            const value = `${type}:${service.id == null ? 'default' : service.id}`;
+            result.push({
+                value,
+                label: service.name || value,
+                type,
+            });
+        });
+    });
+
+    return result;
+}
+
+function renderAccountMonitorEmailServiceOptions(services) {
+    if (!elements.accountMonitorEmailService) return;
+
+    if (!services.length) {
+        elements.accountMonitorEmailService.innerHTML = '<option value="">暂无可用邮箱服务</option>';
+        return;
+    }
+
+    elements.accountMonitorEmailService.innerHTML = services.map((service) => (
+        `<option value="${escapeHtml(service.value)}">${escapeHtml(service.label)}</option>`
+    )).join('');
+}
+
+function ensureMonitorEmailServiceOption(value) {
+    if (!elements.accountMonitorEmailService || !value) return;
+
+    const existing = Array.from(elements.accountMonitorEmailService.options).find((option) => option.value === value);
+    if (existing) return;
+
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    elements.accountMonitorEmailService.appendChild(option);
+}
+
+async function loadAccountMonitorCpaServices() {
+    if (!elements.accountMonitorCpaServices) return;
+
+    try {
+        accountMonitorCpaServices = await api.get('/cpa-services?enabled=true');
+        renderAccountMonitorCpaServices(accountMonitorCpaServices);
+    } catch (error) {
+        elements.accountMonitorCpaServices.innerHTML = '<div style="color:var(--text-muted);">加载失败</div>';
+        appendMonitorLog('error', `加载 CPA 服务失败: ${error.message}`);
+    }
+}
+
+function renderAccountMonitorCpaServices(services) {
+    if (!elements.accountMonitorCpaServices) return;
+
+    if (!services.length) {
+        elements.accountMonitorCpaServices.innerHTML = '<div style="color:var(--text-muted);">暂无可用 CPA 服务</div>';
+        return;
+    }
+
+    elements.accountMonitorCpaServices.innerHTML = services.map((service) => `
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input type="checkbox" class="account-monitor-cpa-service" value="${service.id}">
+            <span>${escapeHtml(service.name)}</span>
+        </label>
+    `).join('');
+}
+
+function syncMonitorCpaServiceSelection(selectedIds) {
+    if (!elements.accountMonitorCpaServices) return;
+
+    const selectedSet = new Set((selectedIds || []).map((id) => parseInt(id, 10)));
+    elements.accountMonitorCpaServices.querySelectorAll('.account-monitor-cpa-service').forEach((checkbox) => {
+        checkbox.checked = selectedSet.has(parseInt(checkbox.value, 10));
+    });
+}
+
+function getSelectedMonitorCpaServiceIds() {
+    if (!elements.accountMonitorCpaServices) return [];
+
+    return Array.from(elements.accountMonitorCpaServices.querySelectorAll('.account-monitor-cpa-service:checked'))
+        .map((checkbox) => parseInt(checkbox.value, 10))
+        .filter((id) => !Number.isNaN(id));
+}
+
+function updateAccountMonitorBadge(isEnabled) {
+    if (!elements.accountMonitorStatusBadge) return;
+
+    if (isEnabled) {
+        elements.accountMonitorStatusBadge.textContent = '🟢 已开启';
+        elements.accountMonitorStatusBadge.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
+        elements.accountMonitorStatusBadge.style.color = 'var(--success-color)';
+    } else {
+        elements.accountMonitorStatusBadge.textContent = '⚪ 已关闭';
+        elements.accountMonitorStatusBadge.style.backgroundColor = 'rgba(128, 128, 128, 0.12)';
+        elements.accountMonitorStatusBadge.style.color = 'var(--text-muted)';
+    }
+}
+
+async function handleSaveAccountMonitorConfig() {
+    if (!elements.accountMonitorSaveBtn) return;
+
+    const payload = {
+        enabled: !!elements.accountMonitorEnabled?.checked,
+        interval_minutes: parseInt(elements.accountMonitorInterval?.value, 10) || 60,
+        sleep_seconds: parseInt(elements.accountMonitorSleep?.value, 10) || 0,
+        auto_register_enabled: !!elements.accountMonitorAutoRegisterEnabled?.checked,
+        healthy_threshold: parseInt(elements.accountMonitorThreshold?.value, 10) || 0,
+        register_batch_count: parseInt(elements.accountMonitorBatchCount?.value, 10) || 5,
+        email_service_selection: elements.accountMonitorEmailService?.value || accountMonitorConfig?.email_service_selection || 'tempmail:default',
+        auto_upload_cpa: !!elements.accountMonitorAutoUploadCpa?.checked,
+        cpa_service_ids: getSelectedMonitorCpaServiceIds(),
+    };
+
+    elements.accountMonitorSaveBtn.disabled = true;
+    elements.accountMonitorSaveBtn.textContent = '保存中...';
+
+    try {
+        await api.post('/account-monitor/config', payload);
+        accountMonitorConfig = payload;
+        updateAccountMonitorBadge(payload.enabled);
+        appendMonitorLog('success', '账号体检配置已保存');
+        toast.success('账号体检配置已保存');
+    } catch (error) {
+        appendMonitorLog('error', `保存账号体检配置失败: ${error.message}`);
+        toast.error('保存失败: ' + error.message);
+    } finally {
+        elements.accountMonitorSaveBtn.disabled = false;
+        elements.accountMonitorSaveBtn.textContent = '💾 保存配置';
+    }
+}
+
+async function handleTriggerAccountMonitor() {
+    if (!elements.accountMonitorTriggerBtn) return;
+
+    elements.accountMonitorTriggerBtn.disabled = true;
+    appendMonitorLog('info', '正在发起账号体检...');
+
+    try {
+        const response = await api.post('/account-monitor/trigger');
+        (response.logs || []).forEach((message) => {
+            appendMonitorLog(getLogType(message), message);
+        });
+        loadStats();
+        loadAccounts();
+        toast.success(response.message || '账号体检执行完毕');
+    } catch (error) {
+        appendMonitorLog('error', `账号体检触发失败: ${error.message}`);
+        toast.error('触发失败: ' + error.message);
+    } finally {
+        elements.accountMonitorTriggerBtn.disabled = false;
+    }
+}
+
+function startAccountMonitorLogPolling() {
+    if (monitorLogPollingInterval) {
+        clearInterval(monitorLogPollingInterval);
+    }
+
+    monitorLogPollingInterval = setInterval(async () => {
+        try {
+            const response = await api.get(`/account-monitor/logs?since_id=${lastMonitorLogId}`);
+            (response.logs || []).forEach((item) => {
+                const type = item.level === 'error' ? 'error' : item.level === 'warning' ? 'warning' : item.level === 'success' ? 'success' : 'info';
+                appendMonitorLog(type, item.message, `monitor:${item.id}`);
+            });
+            lastMonitorLogId = response.last_id || lastMonitorLogId;
+        } catch (error) {
+            console.error('轮询账号体检日志失败:', error);
+        }
+    }, 5000);
+}
+
+function appendMonitorLog(type, message, dedupeKey = null) {
+    if (!elements.accountMonitorLog) return;
+
+    const logKey = dedupeKey || `monitor:${type}:${message}`;
+    if (elements.accountMonitorLog.dataset.lastKey === logKey) {
+        return;
+    }
+    elements.accountMonitorLog.dataset.lastKey = logKey;
+
+    const line = document.createElement('div');
+    line.className = `line ${type}`;
+
+    const timestamp = new Date().toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+
+    line.textContent = `[${timestamp}] ${message}`;
+    elements.accountMonitorLog.appendChild(line);
+    elements.accountMonitorLog.scrollTop = elements.accountMonitorLog.scrollHeight;
+
+    const lines = elements.accountMonitorLog.querySelectorAll('.line');
+    if (lines.length > 200) {
+        lines[0].remove();
     }
 }
 

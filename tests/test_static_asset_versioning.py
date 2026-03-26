@@ -30,12 +30,30 @@ def test_index_template_uses_versioned_static_assets():
     assert '/static/js/app.js?v={{ static_version }}' in template
 
 
-def test_index_template_contains_account_monitor_controls():
-    template = Path("templates/index.html").read_text(encoding="utf-8")
+def test_accounts_template_uses_versioned_static_assets():
+    template = Path("templates/accounts.html").read_text(encoding="utf-8")
+
+    assert '/static/css/style.css?v={{ static_version }}' in template
+    assert '/static/js/utils.js?v={{ static_version }}' in template
+    assert '/static/js/accounts.js?v={{ static_version }}' in template
+
+
+def test_accounts_template_contains_account_monitor_controls():
+    template = Path("templates/accounts.html").read_text(encoding="utf-8")
 
     assert 'account-monitor-status-badge' in template
     assert 'account-monitor-trigger-btn' in template
     assert '账号体检与补货' in template
+    assert 'account-monitor-email-service' in template
+    assert 'account-monitor-auto-upload-cpa' in template
+    assert 'account-monitor-cpa-services' in template
+
+
+def test_index_template_does_not_contain_account_monitor_controls():
+    template = Path("templates/index.html").read_text(encoding="utf-8")
+
+    assert 'account-monitor-status-badge' not in template
+    assert 'account-monitor-trigger-btn' not in template
 
 
 def test_login_page_renders_successfully():

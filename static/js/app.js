@@ -9,7 +9,6 @@ let currentBatch = null;
 let logPollingInterval = null;
 let batchPollingInterval = null;
 let accountsPollingInterval = null;
-let monitorLogPollingInterval = null;
 let isBatchMode = false;
 let isOutlookBatchMode = false;
 let outlookAccounts = [];
@@ -37,7 +36,6 @@ let wsHeartbeatInterval = null;  // 心跳定时器
 let batchWsHeartbeatInterval = null;  // 批量任务心跳定时器
 let activeTaskUuid = null;   // 当前活跃的单任务 UUID（用于页面重新可见时重连）
 let activeBatchId = null;    // 当前活跃的批量任务 ID（用于页面重新可见时重连）
-let lastMonitorLogId = 0;
 
 // DOM 元素
 const elements = {
@@ -97,16 +95,6 @@ const elements = {
     autoUploadTm: document.getElementById('auto-upload-tm'),
     tmServiceSelectGroup: document.getElementById('tm-service-select-group'),
     tmServiceSelect: document.getElementById('tm-service-select'),
-    // 账号体检
-    accountMonitorEnabled: document.getElementById('account-monitor-enabled'),
-    accountMonitorInterval: document.getElementById('account-monitor-interval'),
-    accountMonitorSleep: document.getElementById('account-monitor-sleep'),
-    accountMonitorAutoRegisterEnabled: document.getElementById('account-monitor-auto-register-enabled'),
-    accountMonitorThreshold: document.getElementById('account-monitor-threshold'),
-    accountMonitorBatchCount: document.getElementById('account-monitor-batch-count'),
-    accountMonitorSaveBtn: document.getElementById('account-monitor-save-btn'),
-    accountMonitorTriggerBtn: document.getElementById('account-monitor-trigger-btn'),
-    accountMonitorStatusBadge: document.getElementById('account-monitor-status-badge'),
 };
 
 // 初始化
@@ -118,8 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initVisibilityReconnect();
     restoreActiveTask();
     initAutoUploadOptions();
-    loadAccountMonitorConfig();
-    startAccountMonitorLogPolling();
     loadIpInfo();
 });
 
@@ -235,13 +221,6 @@ function initEventListeners() {
         handleConcurrencyModeChange(elements.outlookConcurrencyMode, elements.outlookConcurrencyHint, elements.outlookIntervalGroup);
     });
 
-    if (elements.accountMonitorSaveBtn) {
-        elements.accountMonitorSaveBtn.addEventListener('click', handleSaveAccountMonitorConfig);
-    }
-
-    if (elements.accountMonitorTriggerBtn) {
-        elements.accountMonitorTriggerBtn.addEventListener('click', handleTriggerAccountMonitor);
-    }
 }
 
 // 加载可用的邮箱服务
@@ -1031,108 +1010,6 @@ function startAccountsPolling() {
     accountsPollingInterval = setInterval(() => {
         loadRecentAccounts();
     }, 30000);
-}
-
-async function loadAccountMonitorConfig() {
-    if (!elements.accountMonitorEnabled) return;
-
-    try {
-        const config = await api.get('/account-monitor/config');
-        elements.accountMonitorEnabled.checked = !!config.enabled;
-        elements.accountMonitorInterval.value = config.interval_minutes ?? 60;
-        elements.accountMonitorSleep.value = config.sleep_seconds ?? 1;
-        elements.accountMonitorAutoRegisterEnabled.checked = !!config.auto_register_enabled;
-        elements.accountMonitorThreshold.value = config.healthy_threshold ?? 10;
-        elements.accountMonitorBatchCount.value = config.register_batch_count ?? 5;
-        updateAccountMonitorBadge(!!config.enabled);
-    } catch (error) {
-        console.error('加载账号体检配置失败:', error);
-    }
-}
-
-function updateAccountMonitorBadge(isEnabled) {
-    if (!elements.accountMonitorStatusBadge) return;
-
-    if (isEnabled) {
-        elements.accountMonitorStatusBadge.textContent = '🟢 已开启';
-        elements.accountMonitorStatusBadge.style.backgroundColor = 'rgba(76, 175, 80, 0.1)';
-        elements.accountMonitorStatusBadge.style.color = 'var(--success-color)';
-    } else {
-        elements.accountMonitorStatusBadge.textContent = '⚪ 已关闭';
-        elements.accountMonitorStatusBadge.style.backgroundColor = 'rgba(128, 128, 128, 0.12)';
-        elements.accountMonitorStatusBadge.style.color = 'var(--text-muted)';
-    }
-}
-
-async function handleSaveAccountMonitorConfig() {
-    if (!elements.accountMonitorSaveBtn) return;
-
-    const payload = {
-        enabled: !!elements.accountMonitorEnabled?.checked,
-        interval_minutes: parseInt(elements.accountMonitorInterval?.value, 10) || 60,
-        sleep_seconds: parseInt(elements.accountMonitorSleep?.value, 10) || 0,
-        auto_register_enabled: !!elements.accountMonitorAutoRegisterEnabled?.checked,
-        healthy_threshold: parseInt(elements.accountMonitorThreshold?.value, 10) || 0,
-        register_batch_count: parseInt(elements.accountMonitorBatchCount?.value, 10) || 5,
-        email_service_selection: elements.emailService?.value || 'tempmail:default',
-        auto_upload_cpa: !!elements.autoUploadCpa?.checked,
-        cpa_service_ids: elements.autoUploadCpa?.checked ? getSelectedServiceIds(elements.cpaServiceSelect) : [],
-    };
-
-    elements.accountMonitorSaveBtn.disabled = true;
-    elements.accountMonitorSaveBtn.textContent = '保存中...';
-
-    try {
-        await api.post('/account-monitor/config', payload);
-        updateAccountMonitorBadge(payload.enabled);
-        addLog('info', '[系统] 账号体检配置已保存');
-        toast.success('账号体检配置已保存');
-    } catch (error) {
-        addLog('error', `[错误] 保存账号体检配置失败: ${error.message}`);
-        toast.error('保存失败: ' + error.message);
-    } finally {
-        elements.accountMonitorSaveBtn.disabled = false;
-        elements.accountMonitorSaveBtn.textContent = '💾 保存体检配置';
-    }
-}
-
-async function handleTriggerAccountMonitor() {
-    if (!elements.accountMonitorTriggerBtn) return;
-
-    elements.accountMonitorTriggerBtn.disabled = true;
-    addLog('info', '[系统] 正在发起账号体检...');
-
-    try {
-        const response = await api.post('/account-monitor/trigger');
-        (response.logs || []).forEach((message) => {
-            addLog(getLogType(message), message);
-        });
-        toast.success(response.message || '账号体检执行完毕');
-    } catch (error) {
-        addLog('error', `[错误] 账号体检触发失败: ${error.message}`);
-        toast.error('触发失败: ' + error.message);
-    } finally {
-        elements.accountMonitorTriggerBtn.disabled = false;
-    }
-}
-
-function startAccountMonitorLogPolling() {
-    if (monitorLogPollingInterval) {
-        clearInterval(monitorLogPollingInterval);
-    }
-
-    monitorLogPollingInterval = setInterval(async () => {
-        try {
-            const response = await api.get(`/account-monitor/logs?since_id=${lastMonitorLogId}`);
-            (response.logs || []).forEach((item) => {
-                const type = item.level === 'error' ? 'error' : item.level === 'warning' ? 'warning' : 'info';
-                addLog(type, item.message, `monitor:${item.id}`);
-            });
-            lastMonitorLogId = response.last_id || lastMonitorLogId;
-        } catch (error) {
-            console.error('轮询账号体检日志失败:', error);
-        }
-    }, 5000);
 }
 
 // 添加日志

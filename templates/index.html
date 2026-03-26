@@ -305,49 +305,6 @@
                                     </div>
                                 </div>
 
-                                <div class="form-group" id="account-monitor-group" style="padding-top: var(--spacing-sm); border-top: 1px solid var(--border-light); margin-top: var(--spacing-sm);">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-xs);">
-                                        <label style="font-weight: 500; margin-bottom: 0;">账号体检与补货 <span id="account-monitor-status-badge" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 6px;"></span></label>
-                                        <button type="button" class="btn btn-ghost btn-sm" id="account-monitor-trigger-btn" style="padding: 2px 8px; font-size: 0.75rem;">⚡ 强制体检</button>
-                                    </div>
-
-                                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
-                                        <input type="checkbox" id="account-monitor-enabled">
-                                        <span>启用定时账号体检</span>
-                                    </label>
-
-                                    <div style="margin-top: 6px; padding-left: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                        <div class="form-group">
-                                            <label for="account-monitor-interval">定时运行间隔 (分钟)</label>
-                                            <input type="number" id="account-monitor-interval" min="1" max="1440" value="60">
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="account-monitor-sleep">每个账号间隔 (秒)</label>
-                                            <input type="number" id="account-monitor-sleep" min="0" max="60" value="1">
-                                        </div>
-                                    </div>
-
-                                    <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; margin-top: 8px;">
-                                        <input type="checkbox" id="account-monitor-auto-register-enabled">
-                                        <span>库存不足时自动补注册</span>
-                                    </label>
-
-                                    <div style="margin-top: 6px; padding-left: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                        <div class="form-group">
-                                            <label for="account-monitor-threshold">健康账号阈值</label>
-                                            <input type="number" id="account-monitor-threshold" min="0" max="1000" value="10">
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="account-monitor-batch-count">每次补货数量</label>
-                                            <input type="number" id="account-monitor-batch-count" min="1" max="100" value="5">
-                                        </div>
-                                    </div>
-
-                                    <div class="form-actions" style="margin-top: 10px;">
-                                        <button type="button" class="btn btn-secondary" id="account-monitor-save-btn" style="width: 100%;">💾 保存体检配置</button>
-                                    </div>
-                                </div>
-
                                 <div class="form-actions" style="flex-direction: column;">
                                     <button type="submit" class="btn btn-primary btn-lg" id="start-btn" style="width: 100%;">
                                         🚀 开始注册

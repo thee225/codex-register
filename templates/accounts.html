@@ -44,6 +44,36 @@
         }
         .cpa-status .badge.uploaded { background: var(--success-color); color: white; }
         .cpa-status .badge.pending { background: var(--border-color); color: var(--text-secondary); }
+        .monitor-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+            gap: 16px;
+        }
+        .monitor-log {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--surface-hover);
+            min-height: 240px;
+            max-height: 320px;
+            overflow-y: auto;
+            padding: 10px 12px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+        }
+        .monitor-log .line {
+            margin-bottom: 6px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .monitor-log .line.info { color: var(--text-primary); }
+        .monitor-log .line.warning { color: var(--warning-color); }
+        .monitor-log .line.error { color: var(--danger-color); }
+        .monitor-log .line.success { color: var(--success-color); }
+        @media (max-width: 960px) {
+            .monitor-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -90,6 +120,82 @@
                 <div class="stat-card danger">
                     <div class="stat-value" id="failed-accounts">0</div>
                     <div class="stat-label">失败账号</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h3>账号体检与补货 <span id="account-monitor-status-badge" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 6px;"></span></h3>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn btn-secondary btn-sm" id="account-monitor-save-btn">💾 保存配置</button>
+                        <button class="btn btn-ghost btn-sm" id="account-monitor-trigger-btn">⚡ 强制体检</button>
+                    </div>
+                </div>
+                <div class="card-body monitor-grid">
+                    <div>
+                        <div class="form-group">
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="account-monitor-enabled">
+                                <span>启用定时账号体检</span>
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="account-monitor-interval">定时运行间隔 (分钟)</label>
+                                <input type="number" id="account-monitor-interval" class="form-input" min="1" max="1440" value="60">
+                            </div>
+                            <div class="form-group">
+                                <label for="account-monitor-sleep">每个账号间隔 (秒)</label>
+                                <input type="number" id="account-monitor-sleep" class="form-input" min="0" max="60" value="1">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="account-monitor-auto-register-enabled">
+                                <span>库存不足时自动补注册</span>
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="account-monitor-threshold">健康账号阈值</label>
+                                <input type="number" id="account-monitor-threshold" class="form-input" min="0" max="1000" value="10">
+                            </div>
+                            <div class="form-group">
+                                <label for="account-monitor-batch-count">每次补货数量</label>
+                                <input type="number" id="account-monitor-batch-count" class="form-input" min="1" max="100" value="5">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="account-monitor-email-service">自动补货使用的邮箱服务</label>
+                            <select id="account-monitor-email-service" class="form-select">
+                                <option value="">加载中...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="account-monitor-auto-upload-cpa">
+                                <span>自动补货后自动上传到 CPA</span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>自动补货上传到哪些 CPA 服务</label>
+                            <div id="account-monitor-cpa-services" style="display:flex; flex-direction:column; gap:8px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface-hover); min-height:44px;">
+                                <div style="color:var(--text-muted);">加载中...</div>
+                            </div>
+                        </div>
+                        <p style="margin:0; color:var(--text-muted); font-size:0.85rem;">
+                            这组配置用于巡检已有账号池，并在健康账号不足时自动排队注册任务补货。
+                        </p>
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <strong style="font-size:0.9rem;">体检日志</strong>
+                            <button class="btn btn-ghost btn-sm" id="account-monitor-clear-log-btn">清空</button>
+                        </div>
+                        <div class="monitor-log" id="account-monitor-log">
+                            <div class="line info">[系统] 等待体检日志...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
