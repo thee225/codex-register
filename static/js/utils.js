@@ -300,25 +300,28 @@ function throttle(func, limit) {
 const format = {
     date(dateStr) {
         if (!dateStr) return '-';
-        const date = new Date(dateStr);
+        const date = parseApiDate(dateStr);
         return date.toLocaleString('zh-CN', {
             year: 'numeric',
             month: '2-digit',
             day: '2-digit',
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            timeZone: 'Asia/Shanghai'
         });
     },
 
     dateShort(dateStr) {
         if (!dateStr) return '-';
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('zh-CN');
+        const date = parseApiDate(dateStr);
+        return date.toLocaleDateString('zh-CN', {
+            timeZone: 'Asia/Shanghai'
+        });
     },
 
     relativeTime(dateStr) {
         if (!dateStr) return '-';
-        const date = new Date(dateStr);
+        const date = parseApiDate(dateStr);
         const now = new Date();
         const diff = now - date;
         const seconds = Math.floor(diff / 1000);
@@ -347,6 +350,12 @@ const format = {
     }
 };
 
+function parseApiDate(dateStr) {
+    const hasExplicitTimezone = dateStr.endsWith('Z') || dateStr.includes('+') || /T.*-\d{2}:\d{2}$/.test(dateStr);
+    const normalized = hasExplicitTimezone ? dateStr : `${dateStr}Z`;
+    return new Date(normalized);
+}
+
 // ============================================
 // 状态映射
 // ============================================
@@ -356,7 +365,7 @@ const statusMap = {
         active: { text: '活跃', class: 'active' },
         expired: { text: '过期', class: 'expired' },
         banned: { text: '封禁', class: 'banned' },
-        failed: { text: '失败', class: 'failed' }
+        failed: { text: '注册失败记录', class: 'failed' }
     },
     task: {
         pending: { text: '等待中', class: 'pending' },
@@ -393,7 +402,7 @@ const accountStatusIconMap = {
     active:  { icon: '🟢', title: '活跃' },
     expired: { icon: '🟡', title: '过期' },
     banned:  { icon: '🔴', title: '封禁' },
-    failed:  { icon: '❌', title: '失败' },
+    failed:  { icon: '❌', title: '注册失败记录' },
 };
 
 function getStatusIcon(status) {

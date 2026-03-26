@@ -16,6 +16,7 @@ from ...database import crud
 from ...database.session import get_db
 from ...database.models import RegistrationTask, Proxy
 from ...core.register import RegistrationEngine, RegistrationResult
+from ...core.account_upload_destinations import record_upload_destination
 from ...services import EmailServiceFactory, EmailServiceType
 from ...config.settings import get_settings
 from ..task_manager import task_manager
@@ -465,8 +466,12 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                                     log_callback(f"[CPA] 上传到服务: {_svc.name}")
                                     _ok, _msg = upload_to_cpa(token_data, api_url=_svc.api_url, api_token=_svc.api_token)
                                     if _ok:
-                                        saved_account.cpa_uploaded = True
-                                        saved_account.cpa_uploaded_at = datetime.utcnow()
+                                        record_upload_destination(
+                                            saved_account,
+                                            "cpa",
+                                            service_id=_svc.id,
+                                            service_name=_svc.name,
+                                        )
                                         db.commit()
                                         log_callback(f"[CPA] 上传成功: {_svc.name}")
                                     else:
@@ -495,6 +500,14 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                                         continue
                                     log_callback(f"[Sub2API] 上传到服务: {_svc.name}")
                                     _ok, _msg = upload_to_sub2api([saved_account], _svc.api_url, _svc.api_key)
+                                    if _ok:
+                                        record_upload_destination(
+                                            saved_account,
+                                            "sub2api",
+                                            service_id=_svc.id,
+                                            service_name=_svc.name,
+                                        )
+                                        db.commit()
                                     log_callback(f"[Sub2API] {'成功' if _ok else '失败'}({_svc.name}): {_msg}")
                                 except Exception as _e:
                                     log_callback(f"[Sub2API] 异常({_sid}): {_e}")
@@ -520,6 +533,14 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                                         continue
                                     log_callback(f"[TM] 上传到服务: {_svc.name}")
                                     _ok, _msg = upload_to_team_manager(saved_account, _svc.api_url, _svc.api_key)
+                                    if _ok:
+                                        record_upload_destination(
+                                            saved_account,
+                                            "tm",
+                                            service_id=_svc.id,
+                                            service_name=_svc.name,
+                                        )
+                                        db.commit()
                                     log_callback(f"[TM] {'成功' if _ok else '失败'}({_svc.name}): {_msg}")
                                 except Exception as _e:
                                     log_callback(f"[TM] 异常({_sid}): {_e}")

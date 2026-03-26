@@ -25,7 +25,7 @@ const elements = {
     totalAccounts: document.getElementById('total-accounts'),
     activeAccounts: document.getElementById('active-accounts'),
     expiredAccounts: document.getElementById('expired-accounts'),
-    failedAccounts: document.getElementById('failed-accounts'),
+    bannedAccounts: document.getElementById('banned-accounts'),
     filterStatus: document.getElementById('filter-status'),
     filterService: document.getElementById('filter-service'),
     searchInput: document.getElementById('search-input'),
@@ -222,7 +222,7 @@ async function loadStats() {
         elements.totalAccounts.textContent = format.number(data.total || 0);
         elements.activeAccounts.textContent = format.number(data.by_status?.active || 0);
         elements.expiredAccounts.textContent = format.number(data.by_status?.expired || 0);
-        elements.failedAccounts.textContent = format.number(data.by_status?.failed || 0);
+        elements.bannedAccounts.textContent = format.number(data.by_status?.banned || 0);
 
         // 添加动画效果
         animateValue(elements.totalAccounts, data.total || 0);
@@ -248,7 +248,7 @@ async function loadAccounts() {
     // 显示加载状态
     elements.table.innerHTML = `
         <tr>
-            <td colspan="9">
+            <td colspan="10">
                 <div class="empty-state">
                     <div class="skeleton skeleton-text" style="width: 60%;"></div>
                     <div class="skeleton skeleton-text" style="width: 80%;"></div>
@@ -289,7 +289,7 @@ async function loadAccounts() {
         console.error('加载账号列表失败:', error);
         elements.table.innerHTML = `
             <tr>
-                <td colspan="9">
+                <td colspan="10">
                     <div class="empty-state">
                         <div class="empty-state-icon">❌</div>
                         <div class="empty-state-title">加载失败</div>
@@ -559,12 +559,56 @@ function appendMonitorLog(type, message, dedupeKey = null) {
     }
 }
 
+function formatUploadDestinationTitle(destination) {
+    const lines = [destination.label];
+    if (destination.uploaded_at) {
+        lines.push(`最近上传: ${format.date(destination.uploaded_at)}`);
+    }
+    if (Array.isArray(destination.services) && destination.services.length) {
+        lines.push(`服务: ${destination.services.map((service) => service.name || `#${service.id}`).join(', ')}`);
+    }
+    return lines.join('\n');
+}
+
+function renderUploadDestinations(destinations) {
+    if (!Array.isArray(destinations) || destinations.length === 0) {
+        return '<span class="badge pending">-</span>';
+    }
+
+    return destinations.map((destination) => `
+        <span class="badge uploaded" title="${escapeHtml(formatUploadDestinationTitle(destination))}" style="margin-right:4px;">
+            ${escapeHtml(destination.label)}
+        </span>
+    `).join('');
+}
+
+function renderUploadDestinationDetails(destinations) {
+    if (!Array.isArray(destinations) || destinations.length === 0) {
+        return '<span class="badge pending">未上传</span>';
+    }
+
+    return destinations.map((destination) => {
+        const serviceText = Array.isArray(destination.services) && destination.services.length
+            ? destination.services.map((service) => service.name || `#${service.id}`).join('、')
+            : '未记录服务';
+        const uploadedAt = destination.uploaded_at ? format.date(destination.uploaded_at) : '未知时间';
+
+        return `
+            <div style="padding:6px 0;border-bottom:1px dashed var(--border-light);">
+                <strong>${escapeHtml(destination.label)}</strong>
+                <div style="color:var(--text-muted);font-size:0.8rem;">${escapeHtml(serviceText)}</div>
+                <div style="color:var(--text-muted);font-size:0.8rem;">${escapeHtml(uploadedAt)}</div>
+            </div>
+        `;
+    }).join('');
+}
+
 // 渲染账号列表
 function renderAccounts(accounts) {
     if (accounts.length === 0) {
         elements.table.innerHTML = `
             <tr>
-                <td colspan="9">
+                <td colspan="10">
                     <div class="empty-state">
                         <div class="empty-state-icon">📭</div>
                         <div class="empty-state-title">暂无数据</div>
@@ -601,9 +645,7 @@ function renderAccounts(accounts) {
             <td>${getStatusIcon(account.status)}</td>
             <td>
                 <div class="cpa-status">
-                    ${account.cpa_uploaded
-                        ? `<span class="badge uploaded" title="已上传于 ${format.date(account.cpa_uploaded_at)}">✓</span>`
-                        : `<span class="badge pending">-</span>`}
+                    ${renderUploadDestinations(account.upload_destinations)}
                 </div>
             </td>
             <td>
@@ -897,6 +939,10 @@ async function viewAccount(id) {
                 <div class="info-item">
                     <span class="label">最后刷新</span>
                     <span class="value">${format.date(account.last_refresh) || '-'}</span>
+                </div>
+                <div class="info-item" style="grid-column: span 2;">
+                    <span class="label">上传去向</span>
+                    <div class="value">${renderUploadDestinationDetails(account.upload_destinations)}</div>
                 </div>
                 <div class="info-item" style="grid-column: span 2;">
                     <span class="label">Account ID</span>

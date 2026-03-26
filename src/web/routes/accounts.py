@@ -6,7 +6,7 @@ import json
 import logging
 import zipfile
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse
@@ -19,6 +19,7 @@ from ...core.openai.token_refresh import validate_account_token as do_validate
 from ...core.upload.cpa_upload import generate_token_json, batch_upload_to_cpa, upload_to_cpa
 from ...core.upload.team_manager_upload import upload_to_team_manager, batch_upload_to_team_manager
 from ...core.upload.sub2api_upload import batch_upload_to_sub2api, upload_to_sub2api
+from ...core.account_upload_destinations import build_upload_destinations, record_upload_destination
 
 from ...core.dynamic_proxy import get_proxy_url_for_task
 from ...database import crud
@@ -61,6 +62,7 @@ class AccountResponse(BaseModel):
     proxy_used: Optional[str] = None
     cpa_uploaded: bool = False
     cpa_uploaded_at: Optional[str] = None
+    upload_destinations: List[Dict[str, Any]] = []
     cookies: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -140,6 +142,7 @@ def account_to_response(account: Account) -> AccountResponse:
         proxy_used=account.proxy_used,
         cpa_uploaded=account.cpa_uploaded or False,
         cpa_uploaded_at=account.cpa_uploaded_at.isoformat() if account.cpa_uploaded_at else None,
+        upload_destinations=build_upload_destinations(account),
         cookies=account.cookies,
         created_at=account.created_at.isoformat() if account.created_at else None,
         updated_at=account.updated_at.isoformat() if account.updated_at else None,
@@ -738,6 +741,9 @@ async def batch_upload_accounts_to_cpa(request: BatchCPAUploadRequest):
             cpa_api_url = svc.api_url
             cpa_api_token = svc.api_token
             include_proxy_url = bool(svc.include_proxy_url)
+            cpa_service_name = svc.name
+    else:
+        cpa_service_name = None
 
     with get_db() as db:
         ids = resolve_account_ids(
@@ -752,6 +758,20 @@ async def batch_upload_accounts_to_cpa(request: BatchCPAUploadRequest):
         api_token=cpa_api_token,
         include_proxy_url=include_proxy_url,
     )
+    with get_db() as db:
+        for detail in results.get("details", []):
+            if not detail.get("success") or not detail.get("id"):
+                continue
+            account = crud.get_account_by_id(db, detail["id"])
+            if not account:
+                continue
+            record_upload_destination(
+                account,
+                "cpa",
+                service_id=request.cpa_service_id,
+                service_name=cpa_service_name,
+            )
+        db.commit()
     return results
 
 
@@ -774,6 +794,9 @@ async def upload_account_to_cpa(account_id: int, request: Optional[CPAUploadRequ
             cpa_api_url = svc.api_url
             cpa_api_token = svc.api_token
             include_proxy_url = bool(svc.include_proxy_url)
+            cpa_service_name = svc.name
+    else:
+        cpa_service_name = None
 
     with get_db() as db:
         account = crud.get_account_by_id(db, account_id)
@@ -797,8 +820,12 @@ async def upload_account_to_cpa(account_id: int, request: Optional[CPAUploadRequ
         success, message = upload_to_cpa(token_data, proxy, api_url=cpa_api_url, api_token=cpa_api_token)
 
         if success:
-            account.cpa_uploaded = True
-            account.cpa_uploaded_at = datetime.utcnow()
+            record_upload_destination(
+                account,
+                "cpa",
+                service_id=cpa_service_id,
+                service_name=cpa_service_name,
+            )
             db.commit()
             return {"success": True, "message": message}
         else:
@@ -838,12 +865,16 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
                 raise HTTPException(status_code=404, detail="指定的 Sub2API 服务不存在")
             api_url = svc.api_url
             api_key = svc.api_key
+            service_name = svc.name
     else:
         with get_db() as db:
             svcs = crud.get_sub2api_services(db, enabled=True)
             if svcs:
                 api_url = svcs[0].api_url
                 api_key = svcs[0].api_key
+                service_name = svcs[0].name
+            else:
+                service_name = None
 
     if not api_url or not api_key:
         raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
@@ -859,6 +890,20 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
         concurrency=request.concurrency,
         priority=request.priority,
     )
+    with get_db() as db:
+        for detail in results.get("details", []):
+            if not detail.get("success") or not detail.get("id"):
+                continue
+            account = crud.get_account_by_id(db, detail["id"])
+            if not account:
+                continue
+            record_upload_destination(
+                account,
+                "sub2api",
+                service_id=request.service_id,
+                service_name=service_name,
+            )
+        db.commit()
     return results
 
 
@@ -879,12 +924,16 @@ async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUp
                 raise HTTPException(status_code=404, detail="指定的 Sub2API 服务不存在")
             api_url = svc.api_url
             api_key = svc.api_key
+            service_name = svc.name
     else:
         with get_db() as db:
             svcs = crud.get_sub2api_services(db, enabled=True)
             if svcs:
                 api_url = svcs[0].api_url
                 api_key = svcs[0].api_key
+                service_name = svcs[0].name
+            else:
+                service_name = None
 
     if not api_url or not api_key:
         raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
@@ -901,6 +950,13 @@ async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUp
             concurrency=concurrency, priority=priority
         )
         if success:
+            record_upload_destination(
+                account,
+                "sub2api",
+                service_id=service_id,
+                service_name=service_name,
+            )
+            db.commit()
             return {"success": True, "message": message}
         else:
             return {"success": False, "error": message}
@@ -944,6 +1000,20 @@ async def batch_upload_accounts_to_tm(request: BatchUploadTMRequest):
         )
 
     results = batch_upload_to_team_manager(ids, api_url, api_key)
+    with get_db() as db:
+        for detail in results.get("details", []):
+            if not detail.get("success") or not detail.get("id"):
+                continue
+            account = crud.get_account_by_id(db, detail["id"])
+            if not account:
+                continue
+            record_upload_destination(
+                account,
+                "tm",
+                service_id=request.service_id,
+                service_name=svc.name,
+            )
+        db.commit()
     return results
 
 
@@ -970,6 +1040,14 @@ async def upload_account_to_tm(account_id: int, request: Optional[UploadTMReques
         if not account:
             raise HTTPException(status_code=404, detail="账号不存在")
         success, message = upload_to_team_manager(account, api_url, api_key)
+        if success:
+            record_upload_destination(
+                account,
+                "tm",
+                service_id=service_id,
+                service_name=svc.name,
+            )
+            db.commit()
 
     return {"success": success, "message": message}
 

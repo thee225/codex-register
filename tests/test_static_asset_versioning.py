@@ -49,6 +49,24 @@ def test_accounts_template_contains_account_monitor_controls():
     assert 'account-monitor-cpa-services' in template
 
 
+def test_accounts_template_uses_banned_stat_card_and_clear_failed_label():
+    template = Path("templates/accounts.html").read_text(encoding="utf-8")
+
+    assert 'id="banned-accounts"' in template
+    assert '封禁账号' in template
+    assert '失败账号' not in template
+    assert '注册失败记录' in template
+    assert '去向' in template
+
+
+def test_utils_js_formats_dates_in_utc_plus_8():
+    script = Path("static/js/utils.js").read_text(encoding="utf-8")
+
+    assert "Asia/Shanghai" in script
+    assert "dateStr.endsWith('Z')" in script
+    assert "dateStr.includes('+')" in script
+
+
 def test_index_template_does_not_contain_account_monitor_controls():
     template = Path("templates/index.html").read_text(encoding="utf-8")
 

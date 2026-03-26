@@ -100,7 +100,7 @@
         <main class="main-content">
             <div class="page-header">
                 <h2>账号管理</h2>
-                <p class="subtitle">查看和管理已注册的 OpenAI 账号</p>
+                <p class="subtitle">查看和管理已注册的 OpenAI 账号，页面时间统一按 UTC+8 显示</p>
             </div>
 
             <!-- 统计卡片 -->
@@ -118,10 +118,13 @@
                     <div class="stat-label">过期账号</div>
                 </div>
                 <div class="stat-card danger">
-                    <div class="stat-value" id="failed-accounts">0</div>
-                    <div class="stat-label">失败账号</div>
+                    <div class="stat-value" id="banned-accounts">0</div>
+                    <div class="stat-label">封禁账号</div>
                 </div>
             </div>
+            <p style="margin: -4px 0 16px; color: var(--text-muted); font-size: 0.85rem;">
+                “注册失败记录”表示该邮箱曾在注册过程中失败或已被判定不适合继续重试，不计入顶部库存统计。
+            </p>
 
             <div class="card">
                 <div class="card-header">
@@ -208,7 +211,7 @@
                             <option value="active">活跃</option>
                             <option value="expired">过期</option>
                             <option value="banned">封禁</option>
-                            <option value="failed">失败</option>
+                            <option value="failed">注册失败记录</option>
                         </select>
 
                         <select id="filter-service" class="form-select">
@@ -275,7 +278,7 @@
                                     <th style="width: 100px;">密码</th>
                                     <th style="width: 120px;">邮箱服务</th>
                                     <th style="width: 80px;">状态</th>
-                                    <th style="width: 80px;">CPA</th>
+                                    <th style="width: 180px;">去向</th>
                                     <th style="width: 80px;">订阅</th>
                                     <th style="width: 140px;">最后刷新</th>
                                     <th style="width: 160px;">操作</th>
@@ -283,7 +286,7 @@
                             </thead>
                             <tbody id="accounts-table">
                                 <tr>
-                                    <td colspan="11">
+                                    <td colspan="10">
                                         <div class="empty-state">
                                             <div class="skeleton skeleton-text" style="width: 60%;"></div>
                                             <div class="skeleton skeleton-text" style="width: 80%;"></div>
