@@ -398,6 +398,60 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         description="Bark API Key",
         is_secret=True
     ),
+    "account_monitor_enabled": SettingDefinition(
+        db_key="account_monitor.enabled",
+        default_value=False,
+        category=SettingCategory.REGISTRATION,
+        description="是否启用账号体检定时任务"
+    ),
+    "account_monitor_interval_minutes": SettingDefinition(
+        db_key="account_monitor.interval_minutes",
+        default_value=60,
+        category=SettingCategory.REGISTRATION,
+        description="账号体检运行间隔（分钟）"
+    ),
+    "account_monitor_sleep_seconds": SettingDefinition(
+        db_key="account_monitor.sleep_seconds",
+        default_value=1,
+        category=SettingCategory.REGISTRATION,
+        description="账号体检每个账号之间的暂停秒数"
+    ),
+    "account_monitor_auto_register_enabled": SettingDefinition(
+        db_key="account_monitor.auto_register_enabled",
+        default_value=False,
+        category=SettingCategory.REGISTRATION,
+        description="账号体检后是否自动补注册"
+    ),
+    "account_monitor_healthy_threshold": SettingDefinition(
+        db_key="account_monitor.healthy_threshold",
+        default_value=10,
+        category=SettingCategory.REGISTRATION,
+        description="健康账号库存阈值"
+    ),
+    "account_monitor_register_batch_count": SettingDefinition(
+        db_key="account_monitor.register_batch_count",
+        default_value=5,
+        category=SettingCategory.REGISTRATION,
+        description="每次自动补注册数量"
+    ),
+    "account_monitor_email_service_selection": SettingDefinition(
+        db_key="account_monitor.email_service_selection",
+        default_value="tempmail:default",
+        category=SettingCategory.REGISTRATION,
+        description="自动补注册使用的邮箱服务选择值"
+    ),
+    "account_monitor_auto_upload_cpa": SettingDefinition(
+        db_key="account_monitor.auto_upload_cpa",
+        default_value=False,
+        category=SettingCategory.REGISTRATION,
+        description="自动补注册后是否自动上传 CPA"
+    ),
+    "account_monitor_cpa_service_ids": SettingDefinition(
+        db_key="account_monitor.cpa_service_ids",
+        default_value=[],
+        category=SettingCategory.REGISTRATION,
+        description="自动补注册上传到的 CPA 服务 ID 列表"
+    ),
 }
 
 # 属性名到数据库键名的映射（用于向后兼容）
@@ -426,6 +480,14 @@ SETTING_TYPES: Dict[str, Type] = {
     "outlook_provider_priority": list,
     "outlook_health_failure_threshold": int,
     "outlook_health_disable_duration": int,
+    "account_monitor_enabled": bool,
+    "account_monitor_interval_minutes": int,
+    "account_monitor_sleep_seconds": int,
+    "account_monitor_auto_register_enabled": bool,
+    "account_monitor_healthy_threshold": int,
+    "account_monitor_register_batch_count": int,
+    "account_monitor_auto_upload_cpa": bool,
+    "account_monitor_cpa_service_ids": list,
 }
 
 # 需要作为 SecretStr 处理的字段
@@ -718,6 +780,17 @@ class Settings(BaseModel):
     # Bark 通知配置
     bark_server_url: str = "https://api.day.app"
     bark_key: Optional[SecretStr] = None
+
+    # 账号体检 / 自动补注册
+    account_monitor_enabled: bool = False
+    account_monitor_interval_minutes: int = 60
+    account_monitor_sleep_seconds: int = 1
+    account_monitor_auto_register_enabled: bool = False
+    account_monitor_healthy_threshold: int = 10
+    account_monitor_register_batch_count: int = 5
+    account_monitor_email_service_selection: str = "tempmail:default"
+    account_monitor_auto_upload_cpa: bool = False
+    account_monitor_cpa_service_ids: List[int] = []
 
 
 # 全局配置实例

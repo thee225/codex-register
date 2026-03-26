@@ -30,6 +30,14 @@ def test_index_template_uses_versioned_static_assets():
     assert '/static/js/app.js?v={{ static_version }}' in template
 
 
+def test_index_template_contains_account_monitor_controls():
+    template = Path("templates/index.html").read_text(encoding="utf-8")
+
+    assert 'account-monitor-status-badge' in template
+    assert 'account-monitor-trigger-btn' in template
+    assert '账号体检与补货' in template
+
+
 def test_login_page_renders_successfully():
     client = TestClient(web_app.create_app())
 

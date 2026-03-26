@@ -184,6 +184,8 @@ def create_app() -> FastAPI:
         # 设置 TaskManager 的事件循环
         loop = asyncio.get_event_loop()
         task_manager.set_loop(loop)
+        from ..core.account_monitor import start_account_monitor_scheduler
+        start_account_monitor_scheduler(loop)
 
         logger.info("=" * 50)
         logger.info(f"{settings.app_name} v{settings.app_version} 启动中...")
