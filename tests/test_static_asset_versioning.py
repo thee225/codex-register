@@ -43,7 +43,11 @@ def test_accounts_template_contains_account_monitor_controls():
 
     assert 'account-monitor-status-badge' in template
     assert 'account-monitor-trigger-btn' in template
-    assert '账号体检与补货' in template
+    assert '定时巡检与补货' in template
+    assert '账号体检与补货' not in template
+    assert '立即执行一次' in template
+    assert '强制体检' not in template
+    assert template.index('体检日志') < template.index('account-monitor-trigger-btn')
     assert 'account-monitor-email-service' in template
     assert 'account-monitor-auto-upload-cpa' in template
     assert 'account-monitor-cpa-services' in template

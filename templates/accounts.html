@@ -128,10 +128,9 @@
 
             <div class="card">
                 <div class="card-header">
-                    <h3>账号体检与补货 <span id="account-monitor-status-badge" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 6px;"></span></h3>
+                    <h3>定时巡检与补货 <span id="account-monitor-status-badge" style="font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 6px;"></span></h3>
                     <div style="display:flex; gap:8px;">
                         <button class="btn btn-secondary btn-sm" id="account-monitor-save-btn">💾 保存配置</button>
-                        <button class="btn btn-ghost btn-sm" id="account-monitor-trigger-btn">⚡ 强制体检</button>
                     </div>
                 </div>
                 <div class="card-body monitor-grid">
@@ -193,7 +192,11 @@
                     <div>
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                             <strong style="font-size:0.9rem;">体检日志</strong>
-                            <button class="btn btn-ghost btn-sm" id="account-monitor-clear-log-btn">清空</button>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <span style="color:var(--text-muted); font-size:0.8rem;">按当前配置立即执行一轮巡检</span>
+                                <button class="btn btn-ghost btn-sm" id="account-monitor-trigger-btn">立即执行一次</button>
+                                <button class="btn btn-ghost btn-sm" id="account-monitor-clear-log-btn">清空</button>
+                            </div>
                         </div>
                         <div class="monitor-log" id="account-monitor-log">
                             <div class="line info">[系统] 等待体检日志...</div>
